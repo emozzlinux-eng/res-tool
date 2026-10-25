@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Component, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppContext, useAppState } from './hooks/useAppState';
 import { hashPin, isLegacyPinHash } from './utils/pin';
 import { TopHeader } from './components/layout/TopHeader';
@@ -7,11 +7,43 @@ import { BottomNav } from './components/layout/BottomNav';
 import { Toast } from './components/ui/Toast';
 import { PinScreen } from './components/auth/PinScreen';
 import { Onboarding } from './components/auth/Onboarding';
-import { HomePage } from './pages/HomePage';
-import { ManagePage } from './pages/ManagePage';
-import { RestockPage } from './pages/RestockPage';
-import { ProfilePage } from './pages/ProfilePage';
-import { Page, DEFAULT_PIN } from './types';
+// Route-level code splitting: only the active page's code is fetched after
+// unlock. The login/onboarding path stays in the main chunk so first paint is
+// never blocked by a page bundle download.
+const HomePage = lazy(() => import('./pages/HomePage').then((m) => ({ default: m.HomePage })));
+const ManagePage = lazy(() => import('./pages/ManagePage').then((m) => ({ default: m.ManagePage })));
+const RestockPage = lazy(() => import('./pages/RestockPage').then((m) => ({ default: m.RestockPage })));
+const ProfilePage = lazy(() => import('./pages/ProfilePage').then((m) => ({ default: m.ProfilePage })));
+import { Page, DEFAULT_PIN, DEMO_STATE } from './types';
+
+class PageBoundary extends Component<{ children: React.ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  render() {
+    if (this.state.failed) {
+      return (
+        <div className="p-6 text-center text-sm text-[var(--text-sub)]">
+          Failed to load this page.{' '}
+          <button className="underline font-medium" onClick={() => window.location.reload()}>
+            Reload the app
+          </button>
+          .
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+function PageFallback() {
+  return (
+    <div className="flex items-center justify-center py-16">
+      <span className="text-2xl animate-pulse" aria-label="Loading">⏳</span>
+    </div>
+  );
+}
 
 const pageTitles: Record<Page, string> = {
   home: 'Dashboard',
@@ -41,11 +73,14 @@ const App = () => {
   const [newPinTemp, setNewPinTemp] = useState('');
   const lastActivity = useRef(Date.now());
 
-  // Auto-lock
+  // Auto-lock. Paused while the PIN screen is showing: activity listeners are
+  // on `window`, so typing PIN digits counted as activity and a lock could
+  // re-trigger mid-entry (the interval firing between verification steps).
   useEffect(() => {
+    if (isLocked || showOnboarding || changingPin) return;
     const checkInactivity = () => {
       if (Date.now() - lastActivity.current > state.autoLockMinutes * 60 * 1000) {
-        if (state.pin && state.onboardingSeen && !showOnboarding) {
+        if (state.pin && state.onboardingSeen) {
           setIsLocked(true);
         }
       }
@@ -54,7 +89,7 @@ const App = () => {
     return () => clearInterval(interval);
     // onboardingSeen read fresh inside the interval; deps intentionally narrow (rewritten in Phase 3)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.autoLockMinutes, state.pin, showOnboarding]);
+  }, [state.autoLockMinutes, state.pin, showOnboarding, isLocked, changingPin]);
 
   // Reset activity timer on interaction
   useEffect(() => {
@@ -69,16 +104,21 @@ const App = () => {
     };
   }, []);
 
-  // Privacy: lock immediately when the tab/window loses focus (optional)
+  // Privacy: lock immediately when the tab/window loses focus (optional).
+  // The blur itself is now derived from React state (`blurred`) instead of an
+  // imperative classList.toggle — previously, if visibilitychange didn't fire
+  // symmetrically (or privacyBlur was toggled off in another session), the
+  // 'privacy-hidden' class could linger and the app stayed blurred forever.
+  const [blurred, setBlurred] = useState(false);
   useEffect(() => {
-    if (!state.privacyBlur) return;
-    const onHide = () => {
-      document
-        .querySelector('.page-stage--blurrable')
-        ?.classList.toggle('privacy-hidden', document.hidden);
-      if (document.hidden && state.pin && state.onboardingSeen && !showOnboarding) setIsLocked(true);
-    };
+    if (!state.privacyBlur) {
+      setBlurred(false);
+      return;
+    }
+    const onHide = () => setBlurred(document.hidden);
     document.addEventListener('visibilitychange', onHide);
+    // Sync immediately in case we returned from a hidden state while disabled
+    setBlurred(document.hidden);
     return () => document.removeEventListener('visibilitychange', onHide);
     // onboardingSeen read fresh inside the handler; deps intentionally narrow (rewritten in Phase 3)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -113,7 +153,11 @@ const App = () => {
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       if (isLocked || showOnboarding) return;
-      if (e.key === 'Escape') setCurrentPage('home');
+      if (e.key !== 'Escape') return;
+      // An open dialog/sheet owns Escape (it closes itself); don't also
+      // navigate behind it. Checked at keydown time, not render time.
+      if (document.querySelector('[role="dialog"]')) return;
+      setCurrentPage('home');
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
@@ -125,6 +169,15 @@ const App = () => {
     setShowOnboarding(false);
     setIsLocked(false);
     showToast('Welcome! Default PIN is 000000 — change it in Profile.');
+  };
+
+  /** Onboarding "Try a demo": seed sample data so new users see the app populated. */
+  const handleStartDemo = async () => {
+    updateState({ ...DEMO_STATE, pin: await hashPin(DEFAULT_PIN), onboardingSeen: true });
+    setShowOnboarding(false);
+    setIsLocked(false);
+    setCurrentPage('home');
+    showToast('Demo loaded with sample data. Default PIN is 000000.');
   };
 
   const handlePinVerify = async (pin: string) => {
@@ -170,7 +223,26 @@ const App = () => {
     setChangingPin(false);
     setChangePinStep('old');
     setNewPinTemp('');
+    lastActivity.current = Date.now(); // don't let the flow's taps trigger an instant lock
   };
+
+  // Keyboard support for the PIN screen. PinScreen itself only handles keys on
+  // its own container div — which is unreliable on Android where soft-keyboard
+  // key events can land with an empty target. This window-level listener
+  // ignores real text inputs (search boxes, quantity fields) but forwards
+  // digits/Backspace to the keypad when no editable field is focused.
+  const pinKeyRef = useRef<(key: string) => void>(() => {});
+  useEffect(() => {
+    if (!isLocked && !changingPin) return;
+    const handler = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      if (/^[0-9]$/.test(e.key)) pinKeyRef.current(e.key);
+      else if (e.key === 'Backspace') pinKeyRef.current('backspace');
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [isLocked, changingPin]);
 
   const lock = useCallback(() => setIsLocked(true), []);
   const replayTutorial = useCallback(() => setShowOnboarding(true), []);
@@ -192,7 +264,7 @@ const App = () => {
     return (
       <AppContext.Provider value={contextValue}>
         <div className="app-shell">
-          <Onboarding onComplete={handleOnboardingComplete} />
+          <Onboarding onComplete={handleOnboardingComplete} onStartDemo={handleStartDemo} />
           <Toast message={toast.msg} visible={toast.visible} />
         </div>
       </AppContext.Provider>
@@ -209,6 +281,7 @@ const App = () => {
               mode={changePinStep === 'old' ? 'change-old' : changePinStep === 'new' ? 'change-new' : 'change-confirm'}
               existingHash={changePinStep === 'old' ? state.pin : undefined}
               onComplete={handleChangePinComplete}
+              onKeyHandler={(h) => { pinKeyRef.current = h; }}
             />
             <button
               onClick={cancelChangePin}
@@ -232,9 +305,15 @@ const App = () => {
             mode="verify"
             existingHash={state.pin || undefined}
             onComplete={handlePinVerify}
+            onBiometricUnlock={() => {
+              // WebAuthn assertion succeeded — unlock without re-entering the PIN.
+              setIsLocked(false);
+              lastActivity.current = Date.now();
+            }}
             scrambleKeypad={state.scrambleKeypad}
             panicWipeEnabled={state.panicWipeEnabled}
             onPanicWipe={handlePanicWipe}
+            onKeyHandler={(h) => { pinKeyRef.current = h; }}
           />
           <Toast message={toast.msg} visible={toast.visible} />
         </div>
@@ -263,12 +342,17 @@ const App = () => {
           }
         />
 
-        {/* Page Content (optionally blurred when the window loses focus — shoulder-surfing protection) */}
-        <div className={`page-stage ${state.privacyBlur ? 'page-stage--blurrable' : ''}`}>
-          {currentPage === 'home' && <HomePage />}
-          {currentPage === 'manage' && <ManagePage />}
-          {currentPage === 'restock' && <RestockPage />}
-          {currentPage === 'profile' && <ProfilePage onOpenChangePin={() => setChangingPin(true)} />}
+        {/* Page Content (optionally blurred when the window loses focus — shoulder-surfing protection).
+            Class is derived from React state so it can never get stuck on. */}
+        <div className={`page-stage ${state.privacyBlur ? 'page-stage--blurrable' : ''} ${blurred && state.privacyBlur ? 'privacy-hidden' : ''}`}>
+          <PageBoundary key={currentPage}>
+            <Suspense fallback={<PageFallback />}>
+              {currentPage === 'home' && <HomePage />}
+              {currentPage === 'manage' && <ManagePage />}
+              {currentPage === 'restock' && <RestockPage />}
+              {currentPage === 'profile' && <ProfilePage onOpenChangePin={() => setChangingPin(true)} />}
+            </Suspense>
+          </PageBoundary>
         </div>
 
         {/* Bottom Navigation */}

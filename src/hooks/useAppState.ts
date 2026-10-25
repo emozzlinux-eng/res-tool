@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, createContext, useContext } from 'react';
 import { AppState, Page } from '../types';
-import { loadState, saveState } from '../utils/storage';
+import { loadState, saveState, peekStoredRev, STORAGE_KEY } from '../utils/storage';
 import { formatTimeAgo } from '../utils/format';
 
 interface AppContextType {
@@ -29,14 +29,20 @@ const SAVE_DEBOUNCE_MS = 400;
 const useMobileViewportHeight = (): void => {
   useEffect(() => {
     const setVh = () => {
-      document.documentElement.style.setProperty('--app-height', `${window.innerHeight}px`);
+      // Prefer visualViewport: it also shrinks when the on-screen keyboard
+      // opens (window.resize does not fire reliably in PWA standalone mode),
+      // keeping the PIN keypad / bottom nav above the fold.
+      const h = window.visualViewport?.height ?? window.innerHeight;
+      document.documentElement.style.setProperty('--app-height', `${h}px`);
     };
     setVh();
     window.addEventListener('resize', setVh);
     window.addEventListener('orientationchange', setVh);
+    window.visualViewport?.addEventListener('resize', setVh);
     return () => {
       window.removeEventListener('resize', setVh);
       window.removeEventListener('orientationchange', setVh);
+      window.visualViewport?.removeEventListener('resize', setVh);
     };
   }, []);
 };
@@ -103,6 +109,24 @@ export const useAppState = () => {
     },
     []
   );
+
+  // Cross-tab awareness: `rev` is bumped by saveState() on every write, so a
+  // 'storage' event with a *different* rev means another tab edited the same
+  // workspace. We don't auto-merge (risk of clobbering unsaved edits), but we
+  // warn instead of silently overwriting the other tab on the next debounce.
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== STORAGE_KEY) return;
+      const stored = peekStoredRev();
+      if (stored !== null && stored !== stateRef.current.rev) {
+        setToast({ msg: '⚠️ Another tab modified this data. Export/import to merge safely.', visible: true });
+        if (toastTimer.current) clearTimeout(toastTimer.current);
+        toastTimer.current = setTimeout(() => setToast((t) => ({ ...t, visible: false })), 5000);
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
 
   // Dark mode
   useEffect(() => {

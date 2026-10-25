@@ -30,8 +30,13 @@ export const Sheet = ({ title, onClose, children, variant = 'sheet' }: SheetProp
     const first = panel?.querySelector<HTMLElement>(FOCUSABLE);
     (first ?? panel)?.focus();
 
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+    // NOTE: body scroll is intentionally NOT locked here. The app shell already
+    // sets `overflow: hidden` on html/body (index.css), so writing to
+    // body.style.overflow can only ever *add* a lock — and if two sheets mount
+    // or unmount out of order (e.g. one closes while another opens), the second
+    // cleanup restores 'hidden' captured from the first, permanently killing
+    // scrolling everywhere. Focus trapping + backdrop clicks already prevent
+    // background interaction, so the lock was unnecessary and unsafe.
 
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -60,7 +65,6 @@ export const Sheet = ({ title, onClose, children, variant = 'sheet' }: SheetProp
     window.addEventListener('keydown', onKey, true);
     return () => {
       window.removeEventListener('keydown', onKey, true);
-      document.body.style.overflow = prevOverflow;
       const prev = previouslyFocused.current as HTMLElement | null;
       prev?.focus?.();
     };

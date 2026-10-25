@@ -234,7 +234,7 @@ export const ManagePage: React.FC = () => {
       {favorites.length > 0 && (
         <div className="mb-4">
           <p className="settings-group__title mb-2">Quick log · {typeMeta[logType].label}</p>
-          <div className="flex gap-2 overflow-x-auto pb-1 ql-row">
+          <div className="flex gap-2 overflow-x-auto pb-1 ql-row overscroll-x-contain">
             {favorites.map((f) => (
               <button
                 key={`fav-${f.name}`}
