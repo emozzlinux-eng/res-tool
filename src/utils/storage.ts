@@ -1,4 +1,5 @@
 import { AppState, DEFAULT_STATE } from '../types';
+import { generateSyncKey } from './helpers';
 
 const STORAGE_KEY = 'inventoryPro_state';
 
@@ -10,12 +11,15 @@ export const loadState = (): AppState => {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
       const parsed = JSON.parse(saved);
-      return { ...DEFAULT_STATE, ...parsed };
+      delete parsed.syncQueue;
+      const state: AppState = { ...DEFAULT_STATE, ...parsed };
+      if (!state.syncKey) state.syncKey = generateSyncKey();
+      return state;
     }
   } catch (e) {
     console.error('Failed to load state:', e);
   }
-  return { ...DEFAULT_STATE };
+  return { ...DEFAULT_STATE, syncKey: generateSyncKey() };
 };
 
 /**
@@ -34,7 +38,7 @@ export const saveState = (state: AppState): void => {
  */
 export const clearState = (): void => {
   try {
-    localStorage.clear();
+    localStorage.removeItem(STORAGE_KEY);
   } catch (e) {
     console.error('Failed to clear state:', e);
   }

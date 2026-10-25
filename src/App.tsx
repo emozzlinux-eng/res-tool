@@ -20,30 +20,21 @@ const pageTitles: Record<Page, string> = {
 };
 
 const App: React.FC = () => {
-  const {
-    state,
-    setState,
-    updateState,
-    showToast,
-    toast,
-    isOnline,
-    currentPage,
-    setCurrentPage,
-  } = useAppState();
+  const app = useAppState();
+  const { state, updateState, showToast, toast, isOnline, syncStatus, currentPage, setCurrentPage, setManageMode } = app;
 
-  const [isLocked, setIsLocked] = React.useState(true);
-  const [showOnboarding, setShowOnboarding] = React.useState(false);
+  const [isLocked, setIsLocked] = React.useState(() => Boolean(state.pin));
+  const [showOnboarding, setShowOnboarding] = React.useState(() => !state.onboardingSeen);
   const [pinSetupStep, setPinSetupStep] = React.useState<'setup' | 'confirm'>('setup');
   const [tempPin, setTempPin] = React.useState('');
   const lastActivity = useRef(Date.now());
 
-  // Auto-lock
+  // Auto-lock after inactivity (0 = never)
   useEffect(() => {
+    if (!state.pin || state.autoLockMinutes <= 0) return;
     const checkInactivity = () => {
-      if (Date.now() - lastActivity.current > state.autoLockMinutes * 60 * 1000) {
-        if (state.pin && !showOnboarding) {
-          setIsLocked(true);
-        }
+      if (Date.now() - lastActivity.current > state.autoLockMinutes * 60 * 1000 && !showOnboarding) {
+        setIsLocked(true);
       }
     };
     const interval = setInterval(checkInactivity, 10000);
@@ -63,34 +54,26 @@ const App: React.FC = () => {
     };
   }, []);
 
-  // Check if first launch
-  useEffect(() => {
-    if (!state.onboardingSeen) {
-      setShowOnboarding(true);
-      setIsLocked(false);
-    } else if (!state.pin) {
-      setShowOnboarding(false);
-      setIsLocked(false);
-    }
-  }, []);
-
-  // Keyboard shortcuts
+  // Keyboard shortcuts (ignored while typing)
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
-      if (isLocked || showOnboarding) return;
-      if (e.key === 'o') setCurrentPage('manage');
-      if (e.key === 'w') setCurrentPage('manage');
-      if (e.key === 'r') setCurrentPage('restock');
+      if (isLocked || showOnboarding || e.metaKey || e.ctrlKey || e.altKey) return;
+      const target = e.target as HTMLElement | null;
+      if (target && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))) return;
+      if (document.querySelector('.modal-overlay, .bottom-sheet, .pin-overlay')) return;
+      if (e.key === 'o') { setManageMode('output'); setCurrentPage('manage'); }
+      if (e.key === 'w') { setManageMode('waste'); setCurrentPage('manage'); }
+      if (e.key === 'r') { setManageMode('restock'); setCurrentPage('manage'); }
       if (e.key === 'Escape') setCurrentPage('home');
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [isLocked, showOnboarding, setCurrentPage]);
+  }, [isLocked, showOnboarding, setCurrentPage, setManageMode]);
 
   const handleOnboardingComplete = () => {
     setShowOnboarding(false);
     setPinSetupStep('setup');
-    setIsLocked(true);
+    if (!state.onboardingSeen) updateState({ onboardingSeen: true });
   };
 
   const handlePinSetupComplete = (pin: string) => {
@@ -99,29 +82,28 @@ const App: React.FC = () => {
       setPinSetupStep('confirm');
     } else {
       if (pin === tempPin) {
-        updateState({ pin: hashPin(pin), onboardingSeen: true });
+        updateState({ pin: hashPin(pin) });
         setIsLocked(false);
+        lastActivity.current = Date.now();
         showToast('PIN set! Welcome to Inventory Pro');
       } else {
         showToast('PINs do not match. Try again.');
         setPinSetupStep('setup');
       }
+      setTempPin('');
     }
   };
 
   const handlePinVerify = () => {
+    lastActivity.current = Date.now();
     setIsLocked(false);
   };
 
-  const contextValue = React.useMemo(() => ({
-    state,
-    setState,
-    updateState,
-    showToast,
-    isOnline,
-    currentPage,
-    setCurrentPage,
-  }), [state, setState, updateState, showToast, isOnline, currentPage, setCurrentPage]);
+  const lock = React.useCallback(() => setIsLocked(true), []);
+  const replayTutorial = React.useCallback(() => setShowOnboarding(true), []);
+
+  const { toast: _toast, ...appContext } = app;
+  const contextValue = { ...appContext, lock, replayTutorial };
 
   // Render onboarding
   if (showOnboarding) {
@@ -141,6 +123,7 @@ const App: React.FC = () => {
       <AppContext.Provider value={contextValue}>
         <div className="app-shell">
           <PinScreen
+            key={pinSetupStep}
             mode={pinSetupStep === 'setup' ? 'setup' : 'confirm'}
             onComplete={handlePinSetupComplete}
           />
@@ -174,6 +157,8 @@ const App: React.FC = () => {
         <TopHeader
           title={pageTitles[currentPage]}
           isOnline={isOnline}
+          syncStatus={syncStatus}
+          onSync={app.syncNow}
         />
 
         {/* Page Content */}

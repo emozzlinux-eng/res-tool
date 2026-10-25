@@ -79,3 +79,63 @@ export const getCurrentTime = (): string => {
     minute: '2-digit' 
   });
 };
+
+/**
+ * Generate a 128-bit random hex key for cloud sync
+ */
+export const generateSyncKey = (): string => {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+};
+
+/**
+ * Format a sync key into readable groups of 4
+ */
+export const formatSyncKey = (key: string): string => key.match(/.{1,4}/g)?.join('-') ?? key;
+
+/**
+ * Normalize user-entered sync key (strip dashes/spaces)
+ */
+export const normalizeSyncKey = (input: string): string => input.toLowerCase().replace(/[^a-f0-9]/g, '');
+
+/**
+ * Round to at most 3 decimals and format without trailing zeros
+ */
+export const formatQty = (n: number): string => {
+  const rounded = Math.round(n * 1000) / 1000;
+  return rounded.toLocaleString('en-US', { maximumFractionDigits: 3 });
+};
+
+/**
+ * Check whether a timestamp falls on the current day
+ */
+export const isToday = (timestamp: number): boolean => {
+  return new Date(timestamp).toDateString() === new Date().toDateString();
+};
+
+export type StockStatus = 'ok' | 'low' | 'out';
+
+/**
+ * Stock status relative to par level
+ */
+export const getStockStatus = (currentStock: number, parLevel: number): StockStatus => {
+  if (currentStock <= 0) return 'out';
+  if (currentStock < parLevel) return 'low';
+  return 'ok';
+};
+
+/**
+ * Trigger a browser download of a text file
+ */
+export const downloadFile = (filename: string, content: string, type = 'application/json'): void => {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+};
