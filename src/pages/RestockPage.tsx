@@ -11,12 +11,11 @@ import {
   orderMessage,
   PurchaseOrder,
   whatsappLink,
+  inventoryValue,
 } from '../utils/inventory';
 import { generateId } from '../utils/helpers';
 import { getCurrentTime } from '../utils/format';
-import { vibrate } from '../utils/device';
 import { downloadFile, inventoryToCsv } from '../utils/export';
-import { inventoryValue } from '../utils/inventory';
 
 export const RestockPage: React.FC = () => {
   const { state, setState, showToast, setCurrentPage } = useApp();

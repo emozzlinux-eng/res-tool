@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { ChevronRight, Plus, Trash2, Pencil } from 'lucide-react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
@@ -623,7 +623,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ onOpenChangePin }) => 
 
       {/* About */}
       <div className="text-center py-4">
-        <p className="text-xs text-[var(--text-muted)]">Inventory Pro v4.2.0 · offline &amp; private by design</p>
+        <p className="text-xs text-[var(--text-muted)]">Inventory Pro v{__APP_VERSION__} · offline &amp; private by design</p>
       </div>
 
       {/* Name dialog */}
