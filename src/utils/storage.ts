@@ -1,6 +1,39 @@
-import { AppState, DEFAULT_STATE } from '../types';
+import { AppState, DEFAULT_STATE, SCHEMA_VERSION } from '../types';
+import { migrateState } from './migrate';
 
 const STORAGE_KEY = 'inventoryPro_state';
+
+/** Backup file envelope — identifies our exports and carries the schema version. */
+export const BACKUP_APP_ID = 'inventory-pro';
+export interface BackupEnvelope {
+  app: typeof BACKUP_APP_ID;
+  schemaVersion: number;
+  exportedAt: string;
+  state: unknown;
+}
+
+export const wrapBackup = (state: AppState): BackupEnvelope => ({
+  app: BACKUP_APP_ID,
+  schemaVersion: SCHEMA_VERSION,
+  exportedAt: new Date().toISOString(),
+  state,
+});
+
+/**
+ * Unwrap a backup file. Accepts both the new envelope format and legacy bare
+ * state objects. Throws on files that clearly aren't ours.
+ */
+export const unwrapBackup = (parsed: unknown): unknown => {
+  if (!parsed || typeof parsed !== 'object') throw new Error('Invalid file');
+  const p = parsed as Record<string, unknown>;
+  if (p.app === BACKUP_APP_ID) {
+    if (typeof p.schemaVersion !== 'number' || !p.state) throw new Error('Corrupt backup');
+    return p.state;
+  }
+  // Legacy: bare state object (no envelope). Accept if it looks like our shape.
+  if ('foods' in p || 'rawItems' in p || 'pin' in p) return p;
+  throw new Error('Not an Inventory Pro backup');
+};
 
 /**
  * Validate/repair a parsed (or restored) state object so a corrupt or foreign
@@ -69,17 +102,19 @@ export const normalizeState = (raw: unknown): AppState => {
     panicWipeEnabled: bool(p.panicWipeEnabled),
     currency: str(p.currency, '$') || '$',
     favorites: arr<string>(p.favorites).filter((n) => typeof n === 'string'),
+    themeMode: p.themeMode === 'light' || p.themeMode === 'dark' ? p.themeMode : 'system',
+    recentSearches: arr<string>(p.recentSearches).filter((n) => typeof n === 'string').slice(0, 8),
   };
 };
 
 /**
- * Load app state from localStorage
+ * Load app state from localStorage (running schema migrations when needed).
  */
 export const loadState = (): AppState => {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
-      return { ...DEFAULT_STATE, ...normalizeState(JSON.parse(saved)) };
+      return migrateState({ ...DEFAULT_STATE, ...normalizeState(JSON.parse(saved)) });
     }
   } catch (e) {
     console.error('Failed to load state:', e);
@@ -98,6 +133,18 @@ export const saveState = (state: AppState): boolean => {
   } catch (e) {
     console.error('Failed to save state:', e);
     return false;
+  }
+};
+
+/** Read the persisted state without adopting it (cross-tab sync checks). */
+export const peekStoredRev = (): number | null => {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (!saved) return null;
+    const parsed = JSON.parse(saved) as { rev?: number };
+    return typeof parsed.rev === 'number' ? parsed.rev : null;
+  } catch {
+    return null;
   }
 };
 

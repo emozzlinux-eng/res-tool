@@ -171,6 +171,151 @@ export const vibrate = (ms: number | number[] = 12): void => {
   }
 };
 
+/**
+ * Play the platform's built-in light notification sound (iOS/Android webviews
+ * and some desktop browsers). Silent no-op where unsupported. Used as an
+ * audible companion to low-stock alerts.
+ */
+export const playBeep = (): void => {
+  try {
+    if ('audio' in window && typeof (window as unknown as { audio: unknown }).audio === 'function') {
+      (window as unknown as { audio: (s: string) => void }).audio('notification');
+    }
+  } catch {
+    /* ignore */
+  }
+};
+
+/**
+ * Show an in-app system-style alert banner for critical stock warnings.
+ * Uses the Notification API when permission was granted; otherwise callers
+ * fall back to toasts/banners inside the app UI.
+ */
+export const showSystemNotification = async (title: string, body: string): Promise<boolean> => {
+  if (!('Notification' in window)) return false;
+  if (Notification.permission !== 'granted') return false;
+  try {
+    await navigator.serviceWorker?.ready;
+    new Notification(title, { body, icon: '/icons/icon-192.png', tag: 'inventory-pro' });
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+export const notificationsSupported = (): boolean =>
+  'Notification' in window && Notification.permission !== 'denied';
+
+export const requestNotificationPermission = async (): Promise<boolean> => {
+  if (!notificationsSupported()) return false;
+  if (Notification.permission === 'granted') return true;
+  try {
+    return (await Notification.requestPermission()) === 'granted';
+  } catch {
+    return false;
+  }
+};
+
+/* ------------------------------------------------------------------ */
+/* Biometric / WebAuthn PIN unlock                                     */
+/* ------------------------------------------------------------------ */
+
+const WEBAUTHN_ID_KEY = 'inventoryPro_webauthn_id';
+
+/** Base64url helpers (WebAuthn works with ArrayBuffers). */
+const b64urlFromBuf = (buf: ArrayBuffer): string =>
+  btoa(String.fromCharCode(...new Uint8Array(buf)))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+const bufFromB64url = (s: string): ArrayBuffer => {
+  const pad = s.length % 4 ? '='.repeat(4 - (s.length % 4)) : '';
+  const bin = atob(s.replace(/-/g, '+').replace(/_/g, '/') + pad);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+};
+
+/** True when this device/browser can offer biometric unlock. */
+export const isBiometricAvailable = async (): Promise<boolean> => {
+  if (!('credentials' in navigator) || !window.PublicKeyCredential) return false;
+  try {
+    return (
+      (await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()) === true
+    );
+  } catch {
+    return false;
+  }
+};
+
+/** Enroll the device biometric/PIN authenticator for quick unlock. */
+export const enrollBiometric = async (): Promise<boolean> => {
+  try {
+    const challenge = crypto.getRandomValues(new Uint8Array(32));
+    const userId = crypto.getRandomValues(new Uint8Array(16));
+    const cred = await navigator.credentials.create({
+      publicKey: {
+        challenge,
+        rp: { name: 'Inventory Pro' },
+        user: {
+          id: userId,
+          name: 'owner',
+          displayName: 'Inventory Pro owner',
+        },
+        pubKeyCredParams: [
+          { type: 'public-key', alg: -7 },
+          { type: 'public-key', alg: -257 },
+        ],
+        authenticatorSelection: {
+          authenticatorAttachment: 'platform',
+          userVerification: 'required',
+        },
+        timeout: 30_000,
+      },
+    });
+    if (!cred) return false;
+    localStorage.setItem(WEBAUTHN_ID_KEY, b64urlFromBuf((cred.rawId as ArrayBuffer)));
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+export const hasBiometricEnrolled = (): boolean => {
+  try {
+    return !!localStorage.getItem(WEBAUTHN_ID_KEY);
+  } catch {
+    return false;
+  }
+};
+
+export const removeBiometric = (): void => {
+  try {
+    localStorage.removeItem(WEBAUTHN_ID_KEY);
+  } catch {
+    /* ignore */
+  }
+};
+
+/** Verify with the enrolled authenticator. Resolves true on success. */
+export const verifyBiometric = async (): Promise<boolean> => {
+  try {
+    const idB64 = localStorage.getItem(WEBAUTHN_ID_KEY);
+    if (!idB64) return false;
+    const assertion = await navigator.credentials.get({
+      publicKey: {
+        challenge: crypto.getRandomValues(new Uint8Array(32)),
+        allowCredentials: [{ type: 'public-key', id: bufFromB64url(idB64) }],
+        userVerification: 'required',
+        timeout: 30_000,
+      },
+    });
+    return !!assertion;
+  } catch {
+    return false;
+  }
+};
+
 /** Shuffle an array (used for optional keypad randomization). */
 export const shuffle = <T,>(arr: T[]): T[] => {
   const a = [...arr];
@@ -225,3 +370,62 @@ export const getCurrentTime = (): string => {
     minute: '2-digit' 
   });
 };
+
+/* ------------------------------------------------------------------ */
+/* Search                                                              */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Lightweight subsequence fuzzy match. Returns a score (higher = better) or
+ * -1 when there is no match. Prefers matches at word starts and consecutive
+ * runs, so "fl r" still finds "Flour", and "crt" ranks "Croissant" above
+ * "Carrot Cake".
+ */
+export const fuzzyScore = (text: string, query: string): number => {
+  const t = text.toLowerCase();
+  const q = query.trim().toLowerCase();
+  if (!q) return 0;
+  // Exact substring match is the strongest signal
+  if (t.includes(q)) return 1000 - t.indexOf(q);
+
+  let score = 0;
+  let ti = 0;
+  let streak = 0;
+  for (let qi = 0; qi < q.length; qi++) {
+    const ch = q[qi];
+    if (ch === ' ') continue;
+    const found = t.indexOf(ch, ti);
+    if (found === -1) return -1;
+    // Word-start bonus + streak bonus for consecutive characters
+    const wordStart = found === 0 || /\s|[^\w]/.test(t[found - 1]);
+    score += wordStart ? 30 : 5;
+    streak = ti === found ? streak + 1 : 0;
+    score += streak * 4;
+    ti = found + 1;
+  }
+  // Penalise widely scattered matches
+  score -= Math.max(0, ti - q.replace(/\s/g, '').length);
+  return score > 0 ? score : -1;
+};
+
+/** Sort candidates by fuzzy relevance to the query (empty query → as-is). */
+export const fuzzyFilter = <T>(items: T[], query: string, getName: (item: T) => string): T[] => {
+  if (!query.trim()) return items;
+  return items
+    .map((item) => ({ item, score: fuzzyScore(getName(item), query) }))
+    .filter((r) => r.score >= 0)
+    .sort((a, b) => b.score - a.score)
+    .map((r) => r.item);
+};
+
+/* ------------------------------------------------------------------ */
+/* Misc formatting                                                     */
+/* ------------------------------------------------------------------ */
+
+/** Format money with the shop currency symbol, e.g. "$12.50". */
+export const fmtMoney = (currency: string, n: number): string =>
+  `${currency}${n.toFixed(2)}`;
+
+/** Day key in YYYY-MM-DD local time (spreadsheet & grouping friendly). */
+export const dayKey = (d: Date | number): string =>
+  new Date(d).toLocaleDateString('en-CA');

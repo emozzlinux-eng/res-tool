@@ -1,15 +1,18 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronRight, Plus, Trash2, Pencil } from 'lucide-react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { ToggleSwitch } from '../components/ui/ToggleSwitch';
 import { useApp } from '../hooks/useAppState';
-import { AppState, Food, RawItem, Recipe, Supplier } from '../types';
+import { Food, RawItem, Recipe, Supplier } from '../types';
 import { DEFAULT_STATE } from '../types';
 import { clearState } from '../utils/storage';
+import { normalizeState } from '../utils/storage';
 import { sanitize } from '../utils/helpers';
 import { recipeCost } from '../utils/inventory';
+import { downloadFile, logToCsv } from '../utils/export';
+import { Sheet } from '../components/ui/Sheet';
 
 type EditorKind = 'foods' | 'recipes' | 'rawItems' | 'suppliers' | null;
 
@@ -17,17 +20,9 @@ interface ProfilePageProps {
   onOpenChangePin: () => void;
 }
 
-const downloadFile = (name: string, content: string, mime: string) => {
-  const blob = new Blob([content], { type: mime });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = name;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-};
+/** Small inline id generator for recipe draft lines (stable React keys). */
+let lineSeq = 0;
+const nextLineId = () => `line_${Date.now().toString(36)}_${++lineSeq}`;
 
 export const ProfilePage: React.FC<ProfilePageProps> = ({ onOpenChangePin }) => {
   const { state, setState, updateState, showToast, lock, replayTutorial } = useApp();
@@ -36,6 +31,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ onOpenChangePin }) => 
   const [nameValue, setNameValue] = useState(state.userName);
   const [showNameDialog, setShowNameDialog] = useState(false);
   const [showLockDialog, setShowLockDialog] = useState(false);
+  const [showResetDialog, setShowResetDialog] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const counts = useMemo(
@@ -59,11 +55,11 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ onOpenChangePin }) => 
   };
 
   const handleExportCsv = () => {
-    const header = 'id,type,item,quantity,time,timestamp';
-    const rows = state.dailyLog.map((e) =>
-      [e.id, e.type, `"${e.name.replace(/"/g, '""')}"`, e.qty, `"${e.time}"`, e.timestamp].join(',')
-    );
-    downloadFile(`inventory-pro-log-${new Date().toISOString().slice(0, 10)}.csv`, [header, ...rows].join('\n'), 'text/csv');
+    if (state.dailyLog.length === 0) {
+      showToast('Nothing to export yet');
+      return;
+    }
+    downloadFile(`inventory-pro-log-${new Date().toISOString().slice(0, 10)}.csv`, logToCsv(state.dailyLog));
     showToast('Log exported as CSV');
   };
 
@@ -71,19 +67,23 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ onOpenChangePin }) => 
     const reader = new FileReader();
     reader.onload = () => {
       try {
-        const parsed = JSON.parse(String(reader.result)) as Partial<AppState>;
+        const parsed = JSON.parse(String(reader.result)) as unknown;
         if (!parsed || typeof parsed !== 'object') throw new Error('Invalid file');
-        setState({ ...DEFAULT_STATE, ...parsed });
+        // Repair/validate every field before adopting the backup — a corrupt
+        // or foreign JSON file can never poison the running app state.
+        const restored = normalizeState(parsed);
+        setState({ ...DEFAULT_STATE, ...restored });
         showToast('Backup restored');
       } catch {
         showToast('Restore failed — invalid backup file');
       }
     };
+    reader.onerror = () => showToast('Could not read that file');
     reader.readAsText(file);
   };
 
   const handleReset = () => {
-    if (!window.confirm('Reset ALL data? This cannot be undone.')) return;
+    setShowResetDialog(false);
     clearState();
     setState({ ...DEFAULT_STATE, onboardingSeen: false, pin: '' });
     showToast('All data reset');
@@ -108,7 +108,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ onOpenChangePin }) => 
   const [foodDraft, setFoodDraft] = useState({ name: '', icon: '🍞', category: '' });
   const [rawDraft, setRawDraft] = useState({ name: '', icon: '📦', unit: 'kg', parLevel: '1', currentStock: '0', costPerUnit: '' });
   const [supplierDraft, setSupplierDraft] = useState({ name: '', phone: '', items: '' });
-  const [recipeDraft, setRecipeDraft] = useState<{ foodName: string; lines: { itemName: string; qty: string }[] }>({
+  const [recipeDraft, setRecipeDraft] = useState<{ foodName: string; lines: { id: string; itemName: string; qty: string }[] }>({
     foodName: '',
     lines: [],
   });
@@ -128,7 +128,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ onOpenChangePin }) => 
       const rec = state.recipes[index];
       setRecipeDraft({
         foodName: rec.foodName,
-        lines: rec.ingredients.map((i) => ({ itemName: i.itemName, qty: String(i.qty) })),
+        lines: rec.ingredients.map((i) => ({ id: nextLineId(), itemName: i.itemName, qty: String(i.qty) })),
       });
     }
   };
@@ -321,7 +321,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ onOpenChangePin }) => 
           ))}
         </select>
         {recipeDraft.lines.map((line, i) => (
-          <div key={i} className="flex gap-2 items-center">
+          <div key={line.id} className="flex gap-2 items-center">
             <select
               value={line.itemName}
               onChange={(e) => {
@@ -365,7 +365,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ onOpenChangePin }) => 
           variant="outline"
           fullWidth
           icon={<Plus size={16} />}
-          onClick={() => setRecipeDraft({ ...recipeDraft, lines: [...recipeDraft.lines, { itemName: '', qty: '' }] })}
+          onClick={() => setRecipeDraft({ ...recipeDraft, lines: [...recipeDraft.lines, { id: nextLineId(), itemName: '', qty: '' }] })}
         >
           Add ingredient
         </Button>
@@ -600,7 +600,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ onOpenChangePin }) => 
       <div className="mb-6">
         <p className="settings-group__title">Danger Zone</p>
         <div className="settings-group">
-          <button className="settings-item settings-item--danger" onClick={handleReset}>
+          <button className="settings-item settings-item--danger" onClick={() => setShowResetDialog(true)}>
             <div className="settings-item__icon bg-[var(--danger-bg)]">🗑️</div>
             <div className="settings-item__content">
               <div className="settings-item__label">Reset All Data</div>
@@ -673,6 +673,24 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ onOpenChangePin }) => 
             ))}
           </div>
         </Modal>
+      )}
+
+      {/* Reset confirmation — in-app sheet instead of window.confirm */}
+      {showResetDialog && (
+        <Sheet title="Reset all data?" onClose={() => setShowResetDialog(false)}>
+          <p className="text-sm text-[var(--text-sub)] mb-4">
+            This permanently deletes every food, ingredient, recipe, supplier and log entry stored on this device.
+            It cannot be undone — export a backup first if you might need this data later.
+          </p>
+          <div className="flex gap-2">
+            <Button variant="outline" fullWidth onClick={() => setShowResetDialog(false)}>
+              Cancel
+            </Button>
+            <Button variant="danger" fullWidth onClick={handleReset}>
+              Delete everything
+            </Button>
+          </div>
+        </Sheet>
       )}
     </div>
   );
