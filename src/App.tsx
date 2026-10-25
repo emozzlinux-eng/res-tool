@@ -11,7 +11,7 @@ import { HomePage } from './pages/HomePage';
 import { ManagePage } from './pages/ManagePage';
 import { RestockPage } from './pages/RestockPage';
 import { ProfilePage } from './pages/ProfilePage';
-import { Page, DEFAULT_PIN } from './types';
+import { Page, DEFAULT_PIN, DEMO_STATE } from './types';
 
 const pageTitles: Record<Page, string> = {
   home: 'Dashboard',
@@ -127,6 +127,15 @@ const App = () => {
     showToast('Welcome! Default PIN is 000000 — change it in Profile.');
   };
 
+  const handleLoadDemo = async () => {
+    // Onboarding "Try a demo" path: seed the sample preset, then finish setup.
+    // Spread order matters: DEMO_STATE first so pin/onboardingSeen below win.
+    updateState({ ...DEMO_STATE, pin: await hashPin(DEFAULT_PIN), onboardingSeen: true });
+    setShowOnboarding(false);
+    setIsLocked(false);
+    showToast('Demo data loaded! Default PIN is 000000 — reset it anytime from Profile.');
+  };
+
   const handlePinVerify = async (pin: string) => {
     // Never unlock on an empty/missing PIN hash — the caller (PinScreen)
     // always verifies against state.pin before calling this.
@@ -192,7 +201,7 @@ const App = () => {
     return (
       <AppContext.Provider value={contextValue}>
         <div className="app-shell">
-          <Onboarding onComplete={handleOnboardingComplete} />
+          <Onboarding onComplete={handleOnboardingComplete} onLoadDemo={handleLoadDemo} />
           <Toast message={toast.msg} visible={toast.visible} />
         </div>
       </AppContext.Provider>
