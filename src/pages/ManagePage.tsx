@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Sheet } from '../components/ui/Sheet';
@@ -55,7 +55,7 @@ export const ManagePage: React.FC = () => {
   const [reportMonthKey, setReportMonthKey] = useState(`${monthOptions[0].year}-${monthOptions[0].month}`);
   const [reportPickerOpen, setReportPickerOpen] = useState(false);
   // Keep the highlighted month valid as data arrives
-  React.useEffect(() => {
+  useEffect(() => {
     if (!monthOptions.some((m) => `${m.year}-${m.month}` === reportMonthKey)) {
       setReportMonthKey(`${monthOptions[0].year}-${monthOptions[0].month}`);
     }
@@ -474,7 +474,7 @@ export const ManagePage: React.FC = () => {
             {monthOptions.map((m) => (
               <button
                 key={`${m.year}-${m.month}`}
-                onClick={() => {
+                onClick={async () => {
                   const hasEntries = state.dailyLog.some((e) => {
                     const d = new Date(e.timestamp);
                     return d.getFullYear() === m.year && d.getMonth() + 1 === m.month;
@@ -484,7 +484,7 @@ export const ManagePage: React.FC = () => {
                     return;
                   }
                   try {
-                    exportMonthReport(state, m.year, m.month);
+                    await exportMonthReport(state, m.year, m.month);
                     showToast('Excel report downloaded');
                     setReportPickerOpen(false);
                   } catch {

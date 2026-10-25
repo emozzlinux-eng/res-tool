@@ -279,3 +279,180 @@ export const wasteValueToday = (state: AppState): number => {
   }
   return Math.round(total * 100) / 100;
 };
+
+/* ------------------------------------------------------------------ */
+/* Analytics                                                           */
+/* ------------------------------------------------------------------ */
+
+/** Entries whose timestamp falls within the last `days` calendar days. */
+export const entriesWithinDays = (log: DailyLogEntry[], days: number): DailyLogEntry[] => {
+  const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+  return log.filter((e) => e.timestamp >= cutoff);
+};
+
+/**
+ * Auto-par suggestion: average daily consumption of a raw item over the last
+ * `days` days (from output recipes + waste + negative adjustments), multiplied
+ * by a lead-time factor. Returns null when there is not enough history yet.
+ */
+export const suggestParLevel = (
+  state: AppState,
+  itemName: string,
+  days = 14
+): { suggestedPar: number; avgDailyUse: number; sampleDays: number } | null => {
+  const window = entriesWithinDays(state.dailyLog, days);
+  if (window.length === 0) return null;
+
+  // Track which calendar days actually had any activity, so averages are honest
+  const activeDays = new Set(window.map((e) => new Date(e.timestamp).toDateString()));
+
+  let used = 0;
+  for (const e of window) {
+    const qty = parseFloat(e.qty) || 0;
+    if (e.type === 'waste' && e.name === itemName) used += qty;
+    if (e.type === 'output') {
+      for (const c of e.stockChanges ?? []) {
+        if (c.itemName === itemName && c.delta < 0) used += -c.delta;
+      }
+    }
+  }
+  if (used <= 0) return null;
+
+  const sampleDays = Math.max(1, activeDays.size);
+  const avgDailyUse = used / sampleDays;
+  // Par = ~2 days of usage rounded up — simple, explainable heuristic
+  const suggestedPar = Math.max(1, Math.ceil(avgDailyUse * 2 * 100) / 100);
+  return { suggestedPar, avgDailyUse: Math.round(avgDailyUse * 100) / 100, sampleDays };
+};
+
+/**
+ * Depletion warning during service: given today's consumption pace, estimate
+ * how many hours of stock remain for an item. Returns null when no usable
+ * rate exists (no consumption today).
+ */
+export const hoursRemaining = (
+  state: AppState,
+  item: RawItem
+): { hours: number; perHour: number } | null => {
+  if (item.currentStock <= 0) return { hours: 0, perHour: 0 };
+  const today = todaysEntries(state.dailyLog);
+  let used = 0;
+  let firstTs = Infinity;
+  for (const e of today) {
+    if (e.type === 'restock') continue;
+    for (const c of e.stockChanges ?? []) {
+      if (c.itemName === item.name && c.delta < 0) {
+        used += -c.delta;
+        firstTs = Math.min(firstTs, e.timestamp);
+      }
+    }
+    if (e.type === 'waste' && e.name === item.name) {
+      used += parseFloat(e.qty) || 0;
+      firstTs = Math.min(firstTs, e.timestamp);
+    }
+  }
+  if (used <= 0 || !Number.isFinite(firstTs)) return null;
+  const elapsedHours = Math.max(0.5, (Date.now() - firstTs) / 3600_000);
+  const perHour = used / elapsedHours;
+  if (perHour <= 0) return null;
+  return { hours: Math.round((item.currentStock / perHour) * 10) / 10, perHour: Math.round(perHour * 100) / 100 };
+};
+
+/**
+ * Waste pattern analysis: totals by reason and by item over a lookback window.
+ */
+export interface WastePatterns {
+  byReason: { reason: string; count: number; qty: number; value: number }[];
+  byItem: { name: string; count: number; qty: number; value: number }[];
+  byWeekday: { day: string; qty: number }[];
+}
+
+export const wastePatterns = (state: AppState, days = 30): WastePatterns => {
+  const window = entriesWithinDays(state.dailyLog, days).filter((e) => e.type === 'waste');
+  const reasonMap = new Map<string, { count: number; qty: number; value: number }>();
+  const itemMap = new Map<string, { count: number; qty: number; value: number }>();
+  const weekdayTotals = new Array<number>(7).fill(0);
+
+  for (const e of window) {
+    const qty = parseFloat(e.qty) || 0;
+    const value = entryValueCached(state, e);
+    const reason = e.reason ?? 'unspecified';
+    const r = reasonMap.get(reason) ?? { count: 0, qty: 0, value: 0 };
+    r.count += 1; r.qty += qty; r.value += value;
+    reasonMap.set(reason, r);
+
+    const it = itemMap.get(e.name) ?? { count: 0, qty: 0, value: 0 };
+    it.count += 1; it.qty += qty; it.value += value;
+    itemMap.set(e.name, it);
+
+    weekdayTotals[new Date(e.timestamp).getDay()] += qty;
+  }
+
+  const round = (n: number) => Math.round(n * 100) / 100;
+  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  return {
+    byReason: [...reasonMap.entries()]
+      .map(([reason, v]) => ({ reason, count: v.count, qty: round(v.qty), value: round(v.value) }))
+      .sort((a, b) => b.value - a.value || b.qty - a.qty),
+    byItem: [...itemMap.entries()]
+      .map(([name, v]) => ({ name, count: v.count, qty: round(v.qty), value: round(v.value) }))
+      .sort((a, b) => b.value - a.value || b.qty - a.qty),
+    byWeekday: dayNames.map((day, i) => ({ day, qty: round(weekdayTotals[i]) })),
+  };
+};
+
+/** Price one entry (recipe cost or raw cost). Shared with report.ts semantics. */
+const entryValueCached = (state: AppState, e: DailyLogEntry): number => {
+  const qty = parseFloat(e.qty) || 0;
+  const rc = recipeCost(state, e.name);
+  if (rc) return rc.total * qty;
+  const raw = state.rawItems.find((i) => i.name === e.name);
+  if (raw?.costPerUnit) return raw.costPerUnit * qty;
+  return 0;
+};
+
+/**
+ * Daily trend series for the last `days` days: produced units, wasted units,
+ * restocked units and waste value per calendar day (oldest → newest).
+ */
+export interface DayPoint {
+  key: string; // YYYY-MM-DD
+  label: string; // e.g. "Mon 20"
+  produced: number;
+  wasted: number;
+  restocked: number;
+  wasteValue: number;
+}
+
+export const dailyTrend = (state: AppState, days = 7): DayPoint[] => {
+  const out: DayPoint[] = [];
+  const now = new Date();
+  const window = entriesWithinDays(state.dailyLog, days);
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+    const key = d.toLocaleDateString('en-CA');
+    const point: DayPoint = {
+      key,
+      label: d.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric' }),
+      produced: 0,
+      wasted: 0,
+      restocked: 0,
+      wasteValue: 0,
+    };
+    for (const e of window) {
+      if (new Date(e.timestamp).toLocaleDateString('en-CA') !== key) continue;
+      const qty = parseFloat(e.qty) || 0;
+      if (e.type === 'output') point.produced += qty;
+      else if (e.type === 'waste') {
+        point.wasted += qty;
+        point.wasteValue += entryValueCached(state, e);
+      } else point.restocked += qty;
+    }
+    point.wasted = Math.round(point.wasted * 100) / 100;
+    point.produced = Math.round(point.produced * 100) / 100;
+    point.restocked = Math.round(point.restocked * 100) / 100;
+    point.wasteValue = Math.round(point.wasteValue * 100) / 100;
+    out.push(point);
+  }
+  return out;
+};

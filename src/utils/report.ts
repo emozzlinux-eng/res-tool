@@ -1,6 +1,14 @@
-import * as XLSX from 'xlsx';
 import { AppState, DailyLogEntry } from '../types';
 import { recipeCost } from './inventory';
+
+/* xlsx (~900 kB) is loaded lazily only when a report is actually exported,
+   keeping the mobile initial bundle small. */
+type XlsxModule = typeof import('xlsx');
+let xlsxPromise: Promise<XlsxModule> | null = null;
+const loadXlsx = (): Promise<XlsxModule> => {
+  if (!xlsxPromise) xlsxPromise = import('xlsx');
+  return xlsxPromise;
+};
 
 /* ------------------------------------------------------------------ */
 /* Month-end report generation (Excel .xlsx, works fully offline)      */
@@ -100,7 +108,8 @@ const autoWidths = (rows: (string | number)[][]): { wch: number }[] => {
  * Build the multi-sheet month-end workbook and download it as .xlsx.
  * Sheets: Summary, Production, Waste, Restocks, Inventory Snapshot, Full Log.
  */
-export const exportMonthReport = (state: AppState, year: number, month: number): void => {
+export const exportMonthReport = async (state: AppState, year: number, month: number): Promise<void> => {
+  const XLSX = await loadXlsx();
   const entries = state.dailyLog
     .filter((e) => inMonth(e.timestamp, year, month))
     .sort((a, b) => a.timestamp - b.timestamp);

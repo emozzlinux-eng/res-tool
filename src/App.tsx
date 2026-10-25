@@ -97,15 +97,12 @@ const App = () => {
     }
   }, [state.onboardingSeen, state.pin]);
 
-  // Keyboard shortcuts
+  // Keyboard shortcuts — desktop nicety only. Escape returns to the dashboard;
+  // single-letter page jumps were removed because they fired while typing in
+  // search boxes on some Android keyboards (target.tagName was empty there).
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       if (isLocked || showOnboarding) return;
-      const target = e.target as HTMLElement | null;
-      if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
-      if (e.key === 'o') setCurrentPage('manage');
-      if (e.key === 'w') setCurrentPage('manage');
-      if (e.key === 'r') setCurrentPage('restock');
       if (e.key === 'Escape') setCurrentPage('home');
     };
     window.addEventListener('keydown', handleKey);
@@ -121,6 +118,9 @@ const App = () => {
   };
 
   const handlePinVerify = async (pin: string) => {
+    // Never unlock on an empty/missing PIN hash — the caller (PinScreen)
+    // always verifies against state.pin before calling this.
+    if (!state.pin) return;
     setIsLocked(false);
     lastActivity.current = Date.now();
     // Transparently upgrade legacy weak PIN hashes on successful unlock
