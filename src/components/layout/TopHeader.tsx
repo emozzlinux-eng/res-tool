@@ -12,12 +12,12 @@ export const TopHeader: React.FC<TopHeaderProps> = ({ title, isOnline, rightActi
     <header className="top-header">
       <h1 className="top-header__title">{title}</h1>
       <div className="top-header__actions">
-        {/* Sync Status Indicator */}
-        <div className="flex items-center gap-1.5">
+        {/* Online status indicator (data is saved locally on this device) */}
+        <div className="flex items-center gap-1.5" title={isOnline ? 'Saved on this device · online' : 'Saved on this device · offline'}>
           {isOnline ? (
             <>
               <div className="w-2 h-2 rounded-full bg-[var(--success)]" />
-              <span className="text-xs text-[var(--text-muted)] font-medium">Synced</span>
+              <span className="text-xs text-[var(--text-muted)] font-medium">Online</span>
             </>
           ) : (
             <>

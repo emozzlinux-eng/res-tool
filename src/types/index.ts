@@ -51,15 +51,6 @@ export interface ActivityEntry {
   time: number;
 }
 
-export interface SyncQueueEntry {
-  id: string;
-  op: 'SET' | 'REMOVE';
-  key: string;
-  data: unknown;
-  timestamp: number;
-  retryCount: number;
-}
-
 export interface AppState {
   foods: Food[];
   rawItems: RawItem[];
@@ -67,7 +58,6 @@ export interface AppState {
   suppliers: Supplier[];
   dailyLog: DailyLogEntry[];
   activityLog: ActivityEntry[];
-  syncQueue: SyncQueueEntry[];
   pin: string;
   onboardingSeen: boolean;
   darkMode: boolean;
@@ -103,7 +93,6 @@ export const DEFAULT_STATE: AppState = {
   ],
   dailyLog: [],
   activityLog: [],
-  syncQueue: [],
   pin: '',
   onboardingSeen: false,
   darkMode: false,
