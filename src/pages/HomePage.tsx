@@ -8,7 +8,7 @@ import {
   wasteToday,
   wasteValueToday,
 } from '../utils/inventory';
-import { formatTimeAgo, getFormattedDate, getGreeting } from '../utils/helpers';
+import { formatTimeAgo, getFormattedDate, getGreeting } from '../utils/format';
 
 /** Friendly labels for waste reasons recorded on the Manage page. */
 const reasonLabels: Record<string, string> = {

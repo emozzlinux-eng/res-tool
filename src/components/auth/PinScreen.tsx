@@ -1,15 +1,15 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { ShieldCheck, Delete } from 'lucide-react';
+import { verifyPin } from '../../utils/pin';
 import {
-  verifyPin,
   getFailedAttempts,
   setFailedAttempts,
   getLockRemainingSec,
   saveLockUntil,
   wipeAllData,
-  vibrate,
-  shuffle,
-} from '../../utils/helpers';
+} from '../../utils/lockout';
+import { vibrate } from '../../utils/device';
+import { shuffle } from '../../utils/helpers';
 
 type PinMode = 'verify' | 'change-old' | 'change-new' | 'change-confirm';
 

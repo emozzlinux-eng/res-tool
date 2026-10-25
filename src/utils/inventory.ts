@@ -6,7 +6,8 @@ import {
   StockChangeRecord,
   Supplier,
 } from '../types';
-import { generateId, getCurrentTime } from './helpers';
+import { generateId } from './helpers';
+import { getCurrentTime } from './format';
 
 export type StockChange = StockChangeRecord;
 
@@ -260,23 +261,23 @@ export const inventoryValue = (items: RawItem[]): number =>
     items.reduce((sum, i) => sum + i.currentStock * (i.costPerUnit ?? 0), 0) * 100
   ) / 100;
 
+/** Price one entry (recipe cost or raw cost). Shared with report.ts semantics. */
+const entryValue = (state: AppState, e: DailyLogEntry): number => {
+  const qty = parseFloat(e.qty) || 0;
+  const rc = recipeCost(state, e.name);
+  if (rc) return rc.total * qty;
+  const raw = state.rawItems.find((i) => i.name === e.name);
+  if (raw?.costPerUnit) return raw.costPerUnit * qty;
+  return 0;
+};
+
 /**
  * Value of everything wasted today (waste entries priced via recipes or the
  * raw item's own cost).
  */
 export const wasteValueToday = (state: AppState): number => {
   const entries = todaysEntries(state.dailyLog).filter((e) => e.type === 'waste');
-  let total = 0;
-  for (const e of entries) {
-    const qty = parseFloat(e.qty) || 0;
-    const rc = recipeCost(state, e.name);
-    if (rc) {
-      total += rc.total * qty;
-      continue;
-    }
-    const raw = state.rawItems.find((i) => i.name === e.name);
-    if (raw?.costPerUnit) total += raw.costPerUnit * qty;
-  }
+  const total = entries.reduce((sum, e) => sum + entryValue(state, e), 0);
   return Math.round(total * 100) / 100;
 };
 
@@ -375,7 +376,7 @@ export const wastePatterns = (state: AppState, days = 30): WastePatterns => {
 
   for (const e of window) {
     const qty = parseFloat(e.qty) || 0;
-    const value = entryValueCached(state, e);
+    const value = entryValue(state, e);
     const reason = e.reason ?? 'unspecified';
     const r = reasonMap.get(reason) ?? { count: 0, qty: 0, value: 0 };
     r.count += 1; r.qty += qty; r.value += value;
@@ -399,16 +400,6 @@ export const wastePatterns = (state: AppState, days = 30): WastePatterns => {
       .sort((a, b) => b.value - a.value || b.qty - a.qty),
     byWeekday: dayNames.map((day, i) => ({ day, qty: round(weekdayTotals[i]) })),
   };
-};
-
-/** Price one entry (recipe cost or raw cost). Shared with report.ts semantics. */
-const entryValueCached = (state: AppState, e: DailyLogEntry): number => {
-  const qty = parseFloat(e.qty) || 0;
-  const rc = recipeCost(state, e.name);
-  if (rc) return rc.total * qty;
-  const raw = state.rawItems.find((i) => i.name === e.name);
-  if (raw?.costPerUnit) return raw.costPerUnit * qty;
-  return 0;
 };
 
 /**
@@ -445,7 +436,7 @@ export const dailyTrend = (state: AppState, days = 7): DayPoint[] => {
       if (e.type === 'output') point.produced += qty;
       else if (e.type === 'waste') {
         point.wasted += qty;
-        point.wasteValue += entryValueCached(state, e);
+        point.wasteValue += entryValue(state, e);
       } else point.restocked += qty;
     }
     point.wasted = Math.round(point.wasted * 100) / 100;
