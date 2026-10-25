@@ -247,9 +247,16 @@ html, body {
   flex-direction: column;
   align-items: center;
   gap: 4px;
-  padding: 6px 16px;
+  padding: 6px 10px;
   border-radius: var(--radius-pill);
   transition: var(--transition);
+}
+
+@media (max-width: 390px) {
+  .nav-tab__pill {
+    padding: 6px 7px;
+    font-size: 11px;
+  }
 }
 
 .nav-tab.active .nav-tab__pill {

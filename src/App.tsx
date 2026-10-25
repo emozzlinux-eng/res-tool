@@ -9,6 +9,7 @@ import { Onboarding } from './components/auth/Onboarding';
 import { HomePage } from './pages/HomePage';
 import { ManagePage } from './pages/ManagePage';
 import { RestockPage } from './pages/RestockPage';
+import { ShoppingPage } from './pages/ShoppingPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { Page } from './types';
 
@@ -16,6 +17,7 @@ const pageTitles: Record<Page, string> = {
   home: 'Dashboard',
   manage: 'Manage',
   restock: 'Inventory',
+  shopping: 'List',
   profile: 'Profile',
 };
 
@@ -35,6 +37,10 @@ const App: React.FC = () => {
   const [showOnboarding, setShowOnboarding] = React.useState(false);
   const [pinSetupStep, setPinSetupStep] = React.useState<'setup' | 'confirm'>('setup');
   const [tempPin, setTempPin] = React.useState('');
+  // Change-PIN flow driven from the Profile page
+  const [changingPin, setChangingPin] = React.useState(false);
+  const [changePinStep, setChangePinStep] = React.useState<'old' | 'new' | 'confirm'>('old');
+  const [newPinTemp, setNewPinTemp] = React.useState('');
   const lastActivity = useRef(Date.now());
 
   // Auto-lock
@@ -78,9 +84,12 @@ const App: React.FC = () => {
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       if (isLocked || showOnboarding) return;
+      const target = e.target as HTMLElement | null;
+      if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
       if (e.key === 'o') setCurrentPage('manage');
       if (e.key === 'w') setCurrentPage('manage');
       if (e.key === 'r') setCurrentPage('restock');
+      if (e.key === 'l') setCurrentPage('shopping');
       if (e.key === 'Escape') setCurrentPage('home');
     };
     window.addEventListener('keydown', handleKey);
@@ -93,13 +102,13 @@ const App: React.FC = () => {
     setIsLocked(true);
   };
 
-  const handlePinSetupComplete = (pin: string) => {
+  const handlePinSetupComplete = async (pin: string) => {
     if (pinSetupStep === 'setup') {
       setTempPin(pin);
       setPinSetupStep('confirm');
     } else {
       if (pin === tempPin) {
-        updateState({ pin: hashPin(pin), onboardingSeen: true });
+        updateState({ pin: await hashPin(pin), onboardingSeen: true });
         setIsLocked(false);
         showToast('PIN set! Welcome to Inventory Pro');
       } else {
@@ -109,9 +118,43 @@ const App: React.FC = () => {
     }
   };
 
-  const handlePinVerify = () => {
+  const handlePinVerify = async (pin: string) => {
     setIsLocked(false);
+    // Transparently upgrade legacy weak PIN hashes on successful unlock
+    if (state.pin.startsWith('h_')) {
+      updateState({ pin: await hashPin(pin) });
+      showToast('PIN security upgraded to SHA-256');
+    }
   };
+
+  // Change-PIN flow (opened from Profile)
+  const handleChangePinComplete = async (pin: string) => {
+    if (changePinStep === 'old') {
+      setChangePinStep('new');
+    } else if (changePinStep === 'new') {
+      setNewPinTemp(pin);
+      setChangePinStep('confirm');
+    } else {
+      if (pin === newPinTemp) {
+        updateState({ pin: await hashPin(pin) });
+        showToast('PIN changed successfully');
+      } else {
+        showToast('PINs do not match. Start again.');
+      }
+      setChangingPin(false);
+      setChangePinStep('old');
+      setNewPinTemp('');
+    }
+  };
+
+  const cancelChangePin = () => {
+    setChangingPin(false);
+    setChangePinStep('old');
+    setNewPinTemp('');
+  };
+
+  const lock = React.useCallback(() => setIsLocked(true), []);
+  const replayTutorial = React.useCallback(() => setShowOnboarding(true), []);
 
   const contextValue = React.useMemo(() => ({
     state,
@@ -121,7 +164,9 @@ const App: React.FC = () => {
     isOnline,
     currentPage,
     setCurrentPage,
-  }), [state, setState, updateState, showToast, isOnline, currentPage, setCurrentPage]);
+    lock,
+    replayTutorial,
+  }), [state, setState, updateState, showToast, isOnline, currentPage, setCurrentPage, lock, replayTutorial]);
 
   // Render onboarding
   if (showOnboarding) {
@@ -129,6 +174,30 @@ const App: React.FC = () => {
       <AppContext.Provider value={contextValue}>
         <div className="app-shell">
           <Onboarding onComplete={handleOnboardingComplete} />
+          <Toast message={toast.msg} visible={toast.visible} />
+        </div>
+      </AppContext.Provider>
+    );
+  }
+
+  // Change-PIN overlay (from Profile, app stays unlocked behind it)
+  if (changingPin) {
+    return (
+      <AppContext.Provider value={contextValue}>
+        <div className="app-shell">
+          <div className="relative h-full">
+            <PinScreen
+              mode={changePinStep === 'old' ? 'change-old' : changePinStep === 'new' ? 'change-new' : 'change-confirm'}
+              existingHash={changePinStep === 'old' ? state.pin : undefined}
+              onComplete={handleChangePinComplete}
+            />
+            <button
+              onClick={cancelChangePin}
+              className="absolute top-4 left-4 text-sm font-medium text-[var(--text-sub)] underline"
+            >
+              Cancel
+            </button>
+          </div>
           <Toast message={toast.msg} visible={toast.visible} />
         </div>
       </AppContext.Provider>
@@ -174,13 +243,24 @@ const App: React.FC = () => {
         <TopHeader
           title={pageTitles[currentPage]}
           isOnline={isOnline}
+          rightAction={
+            <button
+              onClick={lock}
+              aria-label="Lock now"
+              title="Lock now"
+              className="w-9 h-9 rounded-full flex items-center justify-center bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text-main)] active:scale-95 transition-transform"
+            >
+              🔒
+            </button>
+          }
         />
 
         {/* Page Content */}
         {currentPage === 'home' && <HomePage />}
         {currentPage === 'manage' && <ManagePage />}
         {currentPage === 'restock' && <RestockPage />}
-        {currentPage === 'profile' && <ProfilePage />}
+        {currentPage === 'shopping' && <ShoppingPage />}
+        {currentPage === 'profile' && <ProfilePage onOpenChangePin={() => setChangingPin(true)} />}
 
         {/* Bottom Navigation */}
         <BottomNav
