@@ -2,11 +2,31 @@
   command = "npm run build"
   publish = "dist"
 
+# Security headers for the whole site. Production builds strip console/debugger,
+# so verbose logging only ever exists in the dev server — never ship it to prod.
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    X-Frame-Options = "DENY"
+    Referrer-Policy = "no-referrer"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=()"
+    # Only HTML gets no-store; hashed assets are immutable (see below).
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+# Hashed JS/CSS assets never change URL for a given content → cache forever.
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
 [[headers]]
   for = "/sw.js"
   [headers.values]
     Cache-Control = "no-cache"
 
+# Immutable Workbox runtime chunks keep long caching; everything else falls
+# through to the SPA index for client-side routing.
 [[redirects]]
   from = "/*"
   to = "/index.html"

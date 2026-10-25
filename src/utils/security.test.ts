@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { defuseFormula } from './export';
-import { normalizeState, loadPanicWipeEnabled, persistPanicWipeEnabled } from './storage';
+import { normalizeState, loadPanicWipeEnabled, persistPanicWipeEnabled, wrapBackup, unwrapBackup } from './storage';
+import { DEFAULT_STATE, SCHEMA_VERSION } from '../types';
 
 describe('CSV/Excel formula injection defense', () => {
   it('defuses dangerous leading characters', () => {
@@ -73,5 +74,28 @@ describe('panic-wipe flag isolation from backup blob', () => {
     expect(localStorage.getItem('inventoryPro_panicWipe')).toBe('1');
     persistPanicWipeEnabled(false);
     expect(loadPanicWipeEnabled()).toBe(false);
+  });
+});
+
+describe('backup envelope (wrapBackup/unwrapBackup)', () => {
+  it('round-trips state through the versioned envelope', () => {
+    const state = { ...DEFAULT_STATE, foods: [{ name: 'Croissant', icon: '🥐', category: 'Bakery' }] };
+    const env = wrapBackup(state);
+    expect(env.app).toBe('inventory-pro');
+    expect(env.schemaVersion).toBe(SCHEMA_VERSION);
+    const back = unwrapBackup(JSON.parse(JSON.stringify(env)));
+    expect(normalizeState(back).foods[0].name).toBe('Croissant');
+  });
+
+  it('accepts legacy bare-state files', () => {
+    const legacy = { foods: [{ name: 'Toast', icon: '🍞', category: 'General' }] };
+    expect(unwrapBackup(legacy)).toBe(legacy);
+  });
+
+  it('rejects foreign JSON files', () => {
+    expect(() => unwrapBackup({ someOtherApp: true })).toThrow();
+    expect(() => unwrapBackup(null)).toThrow();
+    expect(() => unwrapBackup('a string')).toThrow();
+    expect(() => unwrapBackup({ app: 'inventory-pro', schemaVersion: 'x' })).toThrow();
   });
 });
