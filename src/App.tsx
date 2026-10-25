@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppContext, useAppState } from './hooks/useAppState';
-import { hashPin, isLegacyPinHash } from './utils/helpers';
+import { hashPin, isLegacyPinHash } from './utils/pin';
 import { TopHeader } from './components/layout/TopHeader';
 import { BottomNav } from './components/layout/BottomNav';
 import { Toast } from './components/ui/Toast';

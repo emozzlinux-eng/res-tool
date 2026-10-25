@@ -12,7 +12,9 @@ import {
   PurchaseOrder,
   whatsappLink,
 } from '../utils/inventory';
-import { generateId, getCurrentTime } from '../utils/helpers';
+import { generateId } from '../utils/helpers';
+import { getCurrentTime } from '../utils/format';
+import { vibrate } from '../utils/device';
 import { downloadFile, inventoryToCsv } from '../utils/export';
 import { inventoryValue } from '../utils/inventory';
 

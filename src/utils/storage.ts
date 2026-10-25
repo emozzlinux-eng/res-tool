@@ -53,6 +53,8 @@ export const normalizeState = (raw: unknown): AppState => {
   const arr = <T>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
 
   return {
+    rev: num(p.rev),
+    schemaVersion: num(p.schemaVersion, SCHEMA_VERSION) || SCHEMA_VERSION,
     foods: arr<AppState['foods'][number]>(p.foods)
       .filter((f) => f && typeof f.name === 'string' && f.name.trim())
       .map((f) => ({ name: f.name, icon: str(f.icon, '🍞'), category: str(f.category, 'General') })),

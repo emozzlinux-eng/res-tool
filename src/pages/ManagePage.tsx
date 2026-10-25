@@ -13,7 +13,7 @@ import {
   todaysEntries,
   StockChange,
 } from '../utils/inventory';
-import { vibrate } from '../utils/helpers';
+import { vibrate } from '../utils/device';
 import { downloadFile, logToCsv } from '../utils/export';
 import { exportMonthReport, monthsWithData } from '../utils/report';
 
