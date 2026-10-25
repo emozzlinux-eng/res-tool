@@ -6,6 +6,7 @@ import {
   StockChangeRecord,
   Supplier,
 } from '../types';
+import { generateId, getCurrentTime } from './helpers';
 
 export type StockChange = StockChangeRecord;
 
@@ -71,6 +72,50 @@ export const changesForEntry = (
  */
 export const reverseChanges = (changes: StockChange[]): StockChange[] =>
   changes.map((c) => ({ ...c, delta: -c.delta }));
+
+/**
+ * Build a daily-log entry together with the stock changes it applies.
+ * Shared by ManagePage and RestockPage so both stay consistent.
+ */
+export const buildLogEntry = (
+  state: AppState,
+  type: DailyLogEntry['type'],
+  name: string,
+  qty: number,
+  icon: string,
+  reason?: string
+): { entry: DailyLogEntry; changes: StockChange[] } | null => {
+  if (!(qty > 0)) return null;
+  const changes = changesForEntry(state, type, name, qty);
+  const entry: DailyLogEntry = {
+    id: generateId(),
+    type,
+    icon,
+    name,
+    qty: String(qty),
+    time: getCurrentTime(),
+    timestamp: Date.now(),
+    reason,
+    stockChanges: changes,
+  };
+  return { entry, changes };
+};
+
+/**
+ * Append an entry + apply its stock changes + record activity, immutably.
+ * Keeps the activity log capped at 50 entries.
+ */
+export const commitLogEntry = (
+  prev: AppState,
+  entry: DailyLogEntry,
+  changes: StockChange[],
+  actionLabel: string
+): AppState => ({
+  ...prev,
+  dailyLog: [entry, ...prev.dailyLog],
+  rawItems: applyStockChanges(prev.rawItems, changes),
+  activityLog: [{ action: actionLabel, time: Date.now() }, ...prev.activityLog.slice(0, 49)],
+});
 
 /**
  * Find raw items that are at or below their par level (low) or at zero

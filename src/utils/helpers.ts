@@ -1,17 +1,29 @@
 /**
- * Sanitize user input to prevent XSS
+ * Clean free-text before storing it.
+ *
+ * NOTE: we deliberately do NOT HTML-escape here. React escapes everything it
+ * renders, so escaping on the way in used to double-encode names ("A & B" →
+ * "A &amp; B") and silently broke every name-keyed relationship (recipes,
+ * supplier item lists, favorites). We only strip control characters, collapse
+ * whitespace and cap the length.
  */
-export const sanitize = (str: string): string => {
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
-};
+export const sanitize = (str: string, maxLen = 80): string =>
+  str
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, maxLen);
 
 /**
- * Generate unique ID
+ * Generate unique ID (collision-safe within the same millisecond)
  */
+let idCounter = 0;
 export const generateId = (): string => {
-  return `id_${Date.now().toString(36)}_${Math.random().toString(36).substr(2, 5)}`;
+  idCounter = (idCounter + 1) % 46656; // 36^2
+  return `id_${Date.now().toString(36)}_${idCounter.toString(36).padStart(2, '0')}_${Math.random()
+    .toString(36)
+    .slice(2, 7)}`;
 };
 
 const toHex = (bytes: Uint8Array): string =>
@@ -90,7 +102,15 @@ export const isLegacyPinHash = (storedHash: string): boolean =>
 
 /* ---------- Anti-theft / lockout helpers ---------- */
 
+/** All localStorage keys owned by this app — never touch anything else. */
+export const APP_STORAGE_KEYS = [
+  'inventoryPro_state',
+  'inventoryPro_failed',
+  'inventoryPro_lockUntil',
+] as const;
+
 const FAILED_KEY = 'inventoryPro_failed';
+const LOCK_KEY = 'inventoryPro_lockUntil';
 const MAX_FAILED = 5;
 
 export const getFailedAttempts = (): number => {
@@ -110,14 +130,33 @@ export const setFailedAttempts = (n: number): void => {
   }
 };
 
+/** Remaining lockout seconds (0 when not locked). Survives reloads. */
+export const getLockRemainingSec = (): number => {
+  try {
+    const until = Number(localStorage.getItem(LOCK_KEY)) || 0;
+    return Math.max(0, Math.ceil((until - Date.now()) / 1000));
+  } catch {
+    return 0;
+  }
+};
+
+export const saveLockUntil = (t: number): void => {
+  try {
+    if (t > 0) localStorage.setItem(LOCK_KEY, String(t));
+    else localStorage.removeItem(LOCK_KEY);
+  } catch {
+    /* ignore */
+  }
+};
+
 /**
  * Wipe every piece of app data this browser knows about (state + counters).
- * Used as the panic response after too many wrong PIN attempts.
+ * Used as the panic response after too many wrong PIN attempts. Only removes
+ * our own keys — other sites' data on the device is left alone.
  */
 export const wipeAllData = (): void => {
   try {
-    localStorage.removeItem('inventoryPro_state');
-    localStorage.removeItem(FAILED_KEY);
+    for (const key of APP_STORAGE_KEYS) localStorage.removeItem(key);
   } catch {
     /* ignore */
   }

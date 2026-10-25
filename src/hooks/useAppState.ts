@@ -18,17 +18,57 @@ export const AppContext = createContext<AppContextType>({} as AppContextType);
 
 export const useApp = () => useContext(AppContext);
 
+/**
+ * Correct mobile viewport height. On iOS Safari `100%`/`100vh` ignore the
+ * dynamic URL bar, which hides the bottom nav and FAB when the bar is showing.
+ */
+const useMobileViewportHeight = (): void => {
+  useEffect(() => {
+    const setVh = () => {
+      document.documentElement.style.setProperty('--app-height', `${window.innerHeight}px`);
+    };
+    setVh();
+    window.addEventListener('resize', setVh);
+    window.addEventListener('orientationchange', setVh);
+    return () => {
+      window.removeEventListener('resize', setVh);
+      window.removeEventListener('orientationchange', setVh);
+    };
+  }, []);
+};
+
 export const useAppState = () => {
   const [state, setState] = useState<AppState>(loadState);
   const [currentPage, setCurrentPage] = useState<Page>('home');
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [toast, setToast] = useState({ msg: '', visible: false });
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const savedOnce = useRef(false);
 
-  // Save state on change
+  useMobileViewportHeight();
+
+  // Save state on change — surface quota errors instead of losing data silently
   useEffect(() => {
-    saveState(state);
+    // Skip the initial "save what we just loaded" write
+    if (!savedOnce.current) {
+      savedOnce.current = true;
+      return;
+    }
+    const ok = saveState(state);
+    if (!ok) {
+      setToast({ msg: '⚠️ Storage full — recent changes may not be saved. Export a backup!', visible: true });
+      if (toastTimer.current) clearTimeout(toastTimer.current);
+      toastTimer.current = setTimeout(() => setToast((t) => ({ ...t, visible: false })), 5000);
+    }
   }, [state]);
+
+  // Clear pending toast timer on unmount
+  useEffect(
+    () => () => {
+      if (toastTimer.current) clearTimeout(toastTimer.current);
+    },
+    []
+  );
 
   // Dark mode
   useEffect(() => {

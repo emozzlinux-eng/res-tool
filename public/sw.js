@@ -1,6 +1,13 @@
 /* Inventory Pro service worker — app-shell cache-first, runtime cache for assets */
-const CACHE = 'inventory-pro-v1';
-const APP_SHELL = ['/', '/index.html', '/manifest.webmanifest'];
+const CACHE = 'inventory-pro-v2';
+const APP_SHELL = [
+  '/',
+  '/index.html',
+  '/manifest.webmanifest',
+  '/icons/icon-192.png',
+  '/icons/icon-512.png',
+  '/icons/maskable-512.png',
+];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
