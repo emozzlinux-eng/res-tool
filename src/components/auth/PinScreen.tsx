@@ -4,6 +4,8 @@ import {
   verifyPin,
   getFailedAttempts,
   setFailedAttempts,
+  getLockRemainingSec,
+  saveLockUntil,
   wipeAllData,
   vibrate,
   shuffle,
@@ -40,22 +42,6 @@ const subtitles: Record<PinMode, string> = {
 /** Lockout schedule (seconds) after each consecutive block of failed attempts. */
 const LOCK_STEPS = [15, 30, 60, 120, 300];
 
-const loadLockUntil = (): number => {
-  try {
-    return Number(localStorage.getItem('inventoryPro_lockUntil')) || 0;
-  } catch {
-    return 0;
-  }
-};
-const saveLockUntil = (t: number) => {
-  try {
-    if (t > 0) localStorage.setItem('inventoryPro_lockUntil', String(t));
-    else localStorage.removeItem('inventoryPro_lockUntil');
-  } catch {
-    /* ignore */
-  }
-};
-
 export const PinScreen: React.FC<PinScreenProps> = ({
   mode,
   onComplete,
@@ -68,11 +54,11 @@ export const PinScreen: React.FC<PinScreenProps> = ({
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
   const [attempts, setAttempts] = useState(getFailedAttempts);
-  const [lockRemaining, setLockRemaining] = useState(() =>
-    Math.max(0, Math.ceil((loadLockUntil() - Date.now()) / 1000))
-  );
+  const [lockRemaining, setLockRemaining] = useState(getLockRemainingSec);
   const [verifying, setVerifying] = useState(false);
   const [panicArmed, setPanicArmed] = useState(false);
+  // Guards against double-submitting the last digit before verification settles
+  const busyRef = React.useRef(false);
 
   // Scrambled keypad layout (changes every time the screen opens)
   const keyOrder = useMemo(
@@ -93,7 +79,7 @@ export const PinScreen: React.FC<PinScreenProps> = ({
   };
 
   const handleKey = (key: string) => {
-    if (lockRemaining > 0 || verifying || panicArmed) return;
+    if (lockRemaining > 0 || verifying || panicArmed || busyRef.current) return;
     if (key === 'backspace') {
       setPin((p) => p.slice(0, -1));
       setError('');
@@ -106,37 +92,41 @@ export const PinScreen: React.FC<PinScreenProps> = ({
     vibrate(8);
 
     if (newPin.length === 6) {
+      busyRef.current = true;
       setVerifying(true);
       setTimeout(async () => {
-        if (mode === 'verify' || mode === 'change-old') {
-          const ok = existingHash ? await verifyPin(newPin, existingHash) : false;
-          setVerifying(false);
-          if (ok) {
-            setFailedAttempts(0);
-            saveLockUntil(0);
-            setAttempts(0);
-            onComplete(newPin);
-          } else {
-            vibrate([40, 60, 40]);
-            const newAttempts = attempts + 1;
-            setAttempts(newAttempts);
-            setFailedAttempts(newAttempts);
-            setPin('');
-            setError('');
-            if (panicWipeEnabled && newAttempts >= 5) {
-              setPanicArmed(true);
-            } else if (newAttempts >= 5) {
-              applyLockout(LOCK_STEPS[Math.min(newAttempts - 5, LOCK_STEPS.length - 1)]);
+        try {
+          if (mode === 'verify' || mode === 'change-old') {
+            const ok = existingHash ? await verifyPin(newPin, existingHash) : false;
+            if (ok) {
               setFailedAttempts(0);
+              saveLockUntil(0);
               setAttempts(0);
+              onComplete(newPin);
             } else {
-              setError(`Incorrect PIN. ${5 - newAttempts} attempt${5 - newAttempts === 1 ? '' : 's'} left.`);
+              vibrate([40, 60, 40]);
+              const newAttempts = attempts + 1;
+              setAttempts(newAttempts);
+              setFailedAttempts(newAttempts);
+              setPin('');
+              setError('');
+              if (panicWipeEnabled && newAttempts >= 5) {
+                setPanicArmed(true);
+              } else if (newAttempts >= 5) {
+                applyLockout(LOCK_STEPS[Math.min(newAttempts - 5, LOCK_STEPS.length - 1)]);
+                setFailedAttempts(0);
+                setAttempts(0);
+              } else {
+                setError(`Incorrect PIN. ${5 - newAttempts} attempt${5 - newAttempts === 1 ? '' : 's'} left.`);
+              }
+              onError?.();
             }
-            onError?.();
+          } else {
+            onComplete(newPin);
           }
-        } else {
+        } finally {
           setVerifying(false);
-          onComplete(newPin);
+          busyRef.current = false;
         }
       }, 200);
     }

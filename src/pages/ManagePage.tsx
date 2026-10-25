@@ -1,16 +1,19 @@
 import React, { useMemo, useState } from 'react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
+import { Sheet } from '../components/ui/Sheet';
 import { useApp } from '../hooks/useAppState';
 import { DailyLogEntry } from '../types';
 import {
   applyStockChanges,
+  buildLogEntry,
   changesForEntry,
+  commitLogEntry,
   reverseChanges,
   todaysEntries,
   StockChange,
 } from '../utils/inventory';
-import { generateId, getCurrentTime } from '../utils/helpers';
+import { vibrate } from '../utils/helpers';
 import { downloadFile, logToCsv } from '../utils/export';
 import { exportMonthReport, monthsWithData } from '../utils/report';
 
@@ -40,7 +43,7 @@ export const ManagePage: React.FC = () => {
   const [reason, setReason] = useState('');
   const [reasonNote, setReasonNote] = useState('');
 
-  // Month-end Excel report picker
+  // Month-end Excel report picker (bottom sheet)
   const monthOptions = useMemo(() => {
     const opts = monthsWithData(state);
     if (opts.length === 0) {
@@ -50,6 +53,13 @@ export const ManagePage: React.FC = () => {
     return opts;
   }, [state]);
   const [reportMonthKey, setReportMonthKey] = useState(`${monthOptions[0].year}-${monthOptions[0].month}`);
+  const [reportPickerOpen, setReportPickerOpen] = useState(false);
+  // Keep the highlighted month valid as data arrives
+  React.useEffect(() => {
+    if (!monthOptions.some((m) => `${m.year}-${m.month}` === reportMonthKey)) {
+      setReportMonthKey(`${monthOptions[0].year}-${monthOptions[0].month}`);
+    }
+  }, [monthOptions, reportMonthKey]);
 
   // Candidate items depend on the log type:
   // Produced → FOODS only; Waste & Restock → RAW ITEMS only.
@@ -109,29 +119,15 @@ export const ManagePage: React.FC = () => {
     });
     showToast(isFavorite ? 'Removed from quick log' : 'Added to quick log ⭐');
   };
-  const quickLog = async (name: string) => {
+  const quickLog = (name: string) => {
     const item = candidates.find((c) => c.name === name);
     if (!item) return;
-    const changes = changesForEntry(state, logType, name, 1);
-    const entry: DailyLogEntry = {
-      id: generateId(),
-      type: logType,
-      icon: item.icon,
-      name,
-      qty: '1',
-      time: getCurrentTime(),
-      timestamp: Date.now(),
-      stockChanges: changes,
-    };
-    setState((prev) => ({
-      ...prev,
-      dailyLog: [entry, ...prev.dailyLog],
-      rawItems: applyStockChanges(prev.rawItems, changes),
-      activityLog: [
-        { action: `${typeMeta[logType].icon} ${logType} (quick): 1 ${name}`, time: Date.now() },
-        ...prev.activityLog.slice(0, 49),
-      ],
-    }));
+    const built = buildLogEntry(state, logType, name, 1, item.icon);
+    if (!built) return;
+    vibrate(12);
+    setState((prev) =>
+      commitLogEntry(prev, built.entry, built.changes, `${typeMeta[logType].icon} ${logType} (quick): 1 ${name}`)
+    );
     showToast(`+1 ${name}`);
   };
 
@@ -148,30 +144,17 @@ export const ManagePage: React.FC = () => {
       showToast('Please choose a waste reason');
       return;
     }
-    const entry: DailyLogEntry = {
-      id: generateId(),
-      type: logType,
-      icon: selectedItem.icon,
-      name: selectedItem.name,
-      qty: String(qty),
-      time: getCurrentTime(),
-      timestamp: Date.now(),
-      reason: logType === 'waste' ? resolvedReason : undefined,
-      stockChanges: preview,
-    };
-    setState((prev) => ({
-      ...prev,
-      dailyLog: [entry, ...prev.dailyLog],
-      rawItems: applyStockChanges(prev.rawItems, preview),
-      activityLog: [
-        {
-          action: `${typeMeta[logType].icon} ${logType}: ${qty} ${selectedItem.name}`,
-          time: Date.now(),
-          reason: logType === 'waste' ? resolvedReason : undefined,
-        },
-        ...prev.activityLog.slice(0, 49),
-      ],
-    }));
+    const built = buildLogEntry(state, logType, selectedItem.name, qty, selectedItem.icon, resolvedReason);
+    if (!built) return;
+    vibrate([10, 30, 10]);
+    setState((prev) =>
+      commitLogEntry(
+        prev,
+        built.entry,
+        built.changes,
+        `${typeMeta[logType].icon} ${logType}: ${qty} ${selectedItem.name}`
+      )
+    );
     showToast(`Logged ${qty} ${selectedItem.name} (${typeMeta[logType].label})`);
     setSelectedName('');
     setQty(1);
@@ -189,6 +172,7 @@ export const ManagePage: React.FC = () => {
         ...prev.activityLog.slice(0, 49),
       ],
     }));
+    vibrate(20);
     showToast('Entry undone — stock restored');
   };
 
@@ -467,42 +451,58 @@ export const ManagePage: React.FC = () => {
         <p className="text-xs text-[var(--text-muted)] mb-3">
           Downloads an .xlsx workbook with summary, production, waste, restocks and an inventory snapshot.
         </p>
-        <div className="flex items-center gap-2">
-          <select
-            value={reportMonthKey}
-            onChange={(e) => setReportMonthKey(e.target.value)}
-            aria-label="Choose month to export"
-            className="flex-1 min-w-0 rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-sm text-[var(--text-main)]"
-          >
-            {monthOptions.map((m) => (
-              <option key={`${m.year}-${m.month}`} value={`${m.year}-${m.month}`}>
-                {m.label}
-              </option>
-            ))}
-          </select>
-          <Button
-            onClick={() => {
-              const [y, mo] = reportMonthKey.split('-').map(Number);
-              const hasEntries = state.dailyLog.some((e) => {
-                const d = new Date(e.timestamp);
-                return d.getFullYear() === y && d.getMonth() + 1 === mo;
-              });
-              if (!hasEntries) {
-                showToast('No entries logged in that month');
-                return;
-              }
-              try {
-                exportMonthReport(state, y, mo);
-                showToast('Excel report downloaded');
-              } catch {
-                showToast('Could not generate the report');
-              }
-            }}
-          >
-            Export Excel
-          </Button>
-        </div>
+        <Button
+          fullWidth
+          variant="outline"
+          onClick={() => {
+            const opts = monthsWithData(state);
+            if (opts.length === 0) {
+              showToast('No entries logged yet');
+              return;
+            }
+            setReportPickerOpen(true);
+          }}
+        >
+          Export Excel
+        </Button>
       </Card>
+
+      {/* Month picker — bottom sheet (thumb-friendly on phones) */}
+      {reportPickerOpen && (
+        <Sheet title="Choose month to export" onClose={() => setReportPickerOpen(false)}>
+          <div className="space-y-2 pb-2">
+            {monthOptions.map((m) => (
+              <button
+                key={`${m.year}-${m.month}`}
+                onClick={() => {
+                  const hasEntries = state.dailyLog.some((e) => {
+                    const d = new Date(e.timestamp);
+                    return d.getFullYear() === m.year && d.getMonth() + 1 === m.month;
+                  });
+                  if (!hasEntries) {
+                    showToast('No entries logged in that month');
+                    return;
+                  }
+                  try {
+                    exportMonthReport(state, m.year, m.month);
+                    showToast('Excel report downloaded');
+                    setReportPickerOpen(false);
+                  } catch {
+                    showToast('Could not generate the report');
+                  }
+                }}
+                className={`w-full min-h-[52px] px-4 rounded-[var(--radius)] border text-sm font-medium text-left active:scale-[0.98] transition-transform ${
+                  reportMonthKey === `${m.year}-${m.month}`
+                    ? 'border-[var(--primary)] bg-[var(--primary-light)] text-[var(--primary)]'
+                    : 'border-[var(--border)] bg-[var(--surface-2)] text-[var(--text-main)]'
+                }`}
+              >
+                📅 {m.label}
+              </button>
+            ))}
+          </div>
+        </Sheet>
+      )}
     </div>
   );
 };

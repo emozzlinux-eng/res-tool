@@ -1,6 +1,6 @@
-import React, { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppContext, useAppState } from './hooks/useAppState';
-import { hashPin } from './utils/helpers';
+import { hashPin, isLegacyPinHash } from './utils/helpers';
 import { TopHeader } from './components/layout/TopHeader';
 import { BottomNav } from './components/layout/BottomNav';
 import { Toast } from './components/ui/Toast';
@@ -10,7 +10,7 @@ import { HomePage } from './pages/HomePage';
 import { ManagePage } from './pages/ManagePage';
 import { RestockPage } from './pages/RestockPage';
 import { ProfilePage } from './pages/ProfilePage';
-import { Page, DEFAULT_STATE, DEFAULT_PIN } from './types';
+import { Page, DEFAULT_PIN } from './types';
 
 const pageTitles: Record<Page, string> = {
   home: 'Dashboard',
@@ -19,7 +19,7 @@ const pageTitles: Record<Page, string> = {
   profile: 'Profile',
 };
 
-const App: React.FC = () => {
+const App = () => {
   const {
     state,
     setState,
@@ -31,12 +31,12 @@ const App: React.FC = () => {
     setCurrentPage,
   } = useAppState();
 
-  const [isLocked, setIsLocked] = React.useState(true);
-  const [showOnboarding, setShowOnboarding] = React.useState(false);
+  const [isLocked, setIsLocked] = useState(true);
+  const [showOnboarding, setShowOnboarding] = useState(false);
   // Change-PIN flow driven from the Profile page
-  const [changingPin, setChangingPin] = React.useState(false);
-  const [changePinStep, setChangePinStep] = React.useState<'old' | 'new' | 'confirm'>('old');
-  const [newPinTemp, setNewPinTemp] = React.useState('');
+  const [changingPin, setChangingPin] = useState(false);
+  const [changePinStep, setChangePinStep] = useState<'old' | 'new' | 'confirm'>('old');
+  const [newPinTemp, setNewPinTemp] = useState('');
   const lastActivity = useRef(Date.now());
 
   // Auto-lock
@@ -124,17 +124,16 @@ const App: React.FC = () => {
     setIsLocked(false);
     lastActivity.current = Date.now();
     // Transparently upgrade legacy weak PIN hashes on successful unlock
-    if (state.pin.startsWith('h_')) {
+    if (isLegacyPinHash(state.pin)) {
       updateState({ pin: await hashPin(pin) });
-      showToast('PIN security upgraded to SHA-256');
+      showToast('PIN security upgraded to PBKDF2-SHA-256');
     }
   };
 
-  // Panic wipe completed on the PIN screen — return to first-run state
+  // Panic wipe completed on the PIN screen — return to first-run state.
+  // Reload so every screen, timer and cached value starts from a clean slate.
   const handlePanicWipe = () => {
-    setState({ ...DEFAULT_STATE });
-    setIsLocked(true);
-    setShowOnboarding(false);
+    window.location.reload();
   };
 
   // Change-PIN flow (opened from Profile)
@@ -163,10 +162,10 @@ const App: React.FC = () => {
     setNewPinTemp('');
   };
 
-  const lock = React.useCallback(() => setIsLocked(true), []);
-  const replayTutorial = React.useCallback(() => setShowOnboarding(true), []);
+  const lock = useCallback(() => setIsLocked(true), []);
+  const replayTutorial = useCallback(() => setShowOnboarding(true), []);
 
-  const contextValue = React.useMemo(() => ({
+  const contextValue = useMemo(() => ({
     state,
     setState,
     updateState,
