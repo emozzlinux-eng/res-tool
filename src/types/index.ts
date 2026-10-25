@@ -14,21 +14,13 @@ export interface RawItem {
   costPerUnit?: number;
 }
 
-/** A shopping / to-buy list item, independent from inventory logging. */
-export interface ShoppingItem {
-  id: string;
-  text: string;
-  qty?: string;
-  done: boolean;
-  addedAt: number;
-}
-
 export interface RecipeIngredient {
   itemName: string;
   qty: number;
 }
 
 export interface Recipe {
+  /** Free-text food name — may be typed manually or picked from existing foods. */
   foodName: string;
   ingredients: RecipeIngredient[];
 }
@@ -60,6 +52,8 @@ export interface DailyLogEntry {
 export interface ActivityEntry {
   action: string;
   time: number;
+  /** Waste reason badge (optional). */
+  reason?: string;
 }
 
 export interface AppState {
@@ -69,7 +63,7 @@ export interface AppState {
   suppliers: Supplier[];
   dailyLog: DailyLogEntry[];
   activityLog: ActivityEntry[];
-  shoppingList: ShoppingItem[];
+  /** Default sign-in PIN (also used after Reset All Data). Can be changed via Change PIN. */
   pin: string;
   onboardingSeen: boolean;
   darkMode: boolean;
@@ -85,7 +79,10 @@ export interface AppState {
   favorites: string[];
 }
 
-export type Page = 'home' | 'manage' | 'restock' | 'shopping' | 'profile';
+export type Page = 'home' | 'manage' | 'restock' | 'profile';
+
+/** Default sign-in PIN used on first use and after Reset All Data. Changeable via Change PIN. */
+export const DEFAULT_PIN = '000000';
 
 /**
  * Fresh-start state — intentionally contains NO demo/sample data.
@@ -99,7 +96,6 @@ export const DEFAULT_STATE: AppState = {
   suppliers: [],
   dailyLog: [],
   activityLog: [],
-  shoppingList: [],
   pin: '',
   onboardingSeen: false,
   darkMode: false,

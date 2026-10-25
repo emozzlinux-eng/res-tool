@@ -9,15 +9,13 @@ import { Onboarding } from './components/auth/Onboarding';
 import { HomePage } from './pages/HomePage';
 import { ManagePage } from './pages/ManagePage';
 import { RestockPage } from './pages/RestockPage';
-import { ShoppingPage } from './pages/ShoppingPage';
 import { ProfilePage } from './pages/ProfilePage';
-import { Page, DEFAULT_STATE } from './types';
+import { Page, DEFAULT_STATE, DEFAULT_PIN } from './types';
 
 const pageTitles: Record<Page, string> = {
   home: 'Dashboard',
   manage: 'Manage',
   restock: 'Inventory',
-  shopping: 'List',
   profile: 'Profile',
 };
 
@@ -35,8 +33,6 @@ const App: React.FC = () => {
 
   const [isLocked, setIsLocked] = React.useState(true);
   const [showOnboarding, setShowOnboarding] = React.useState(false);
-  const [pinSetupStep, setPinSetupStep] = React.useState<'setup' | 'confirm'>('setup');
-  const [tempPin, setTempPin] = React.useState('');
   // Change-PIN flow driven from the Profile page
   const [changingPin, setChangingPin] = React.useState(false);
   const [changePinStep, setChangePinStep] = React.useState<'old' | 'new' | 'confirm'>('old');
@@ -47,7 +43,7 @@ const App: React.FC = () => {
   useEffect(() => {
     const checkInactivity = () => {
       if (Date.now() - lastActivity.current > state.autoLockMinutes * 60 * 1000) {
-        if (state.pin && !showOnboarding) {
+        if (state.pin && state.onboardingSeen && !showOnboarding) {
           setIsLocked(true);
         }
       }
@@ -76,7 +72,7 @@ const App: React.FC = () => {
       document
         .querySelector('.page-stage--blurrable')
         ?.classList.toggle('privacy-hidden', document.hidden);
-      if (document.hidden && state.pin && !showOnboarding) setIsLocked(true);
+      if (document.hidden && state.pin && state.onboardingSeen && !showOnboarding) setIsLocked(true);
     };
     document.addEventListener('visibilitychange', onHide);
     return () => document.removeEventListener('visibilitychange', onHide);
@@ -87,11 +83,19 @@ const App: React.FC = () => {
     if (!state.onboardingSeen) {
       setShowOnboarding(true);
       setIsLocked(false);
-    } else if (!state.pin) {
-      setShowOnboarding(false);
-      setIsLocked(false);
     }
   }, []);
+
+  // If PIN was cleared (e.g. Reset All Data), restore the default PIN 000000
+  useEffect(() => {
+    if (state.onboardingSeen && !state.pin) {
+      (async () => {
+        updateState({ pin: await hashPin(DEFAULT_PIN) });
+        setIsLocked(true);
+        showToast('PIN reset to default: 000000');
+      })();
+    }
+  }, [state.onboardingSeen, state.pin]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -102,33 +106,18 @@ const App: React.FC = () => {
       if (e.key === 'o') setCurrentPage('manage');
       if (e.key === 'w') setCurrentPage('manage');
       if (e.key === 'r') setCurrentPage('restock');
-      if (e.key === 'l') setCurrentPage('shopping');
       if (e.key === 'Escape') setCurrentPage('home');
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
   }, [isLocked, showOnboarding, setCurrentPage]);
 
-  const handleOnboardingComplete = () => {
+  const handleOnboardingComplete = async () => {
+    // First use: the default PIN is 000000 (changeable via Profile → Change PIN)
+    updateState({ pin: await hashPin(DEFAULT_PIN), onboardingSeen: true });
     setShowOnboarding(false);
-    setPinSetupStep('setup');
-    setIsLocked(true);
-  };
-
-  const handlePinSetupComplete = async (pin: string) => {
-    if (pinSetupStep === 'setup') {
-      setTempPin(pin);
-      setPinSetupStep('confirm');
-    } else {
-      if (pin === tempPin) {
-        updateState({ pin: await hashPin(pin), onboardingSeen: true });
-        setIsLocked(false);
-        showToast('PIN set! Welcome to Inventory Pro');
-      } else {
-        showToast('PINs do not match. Try again.');
-        setPinSetupStep('setup');
-      }
-    }
+    setIsLocked(false);
+    showToast('Welcome! Default PIN is 000000 — change it in Profile.');
   };
 
   const handlePinVerify = async (pin: string) => {
@@ -225,29 +214,14 @@ const App: React.FC = () => {
     );
   }
 
-  // Render PIN setup (after onboarding, first time)
-  if (!state.pin && state.onboardingSeen) {
-    return (
-      <AppContext.Provider value={contextValue}>
-        <div className="app-shell">
-          <PinScreen
-            mode={pinSetupStep === 'setup' ? 'setup' : 'confirm'}
-            onComplete={handlePinSetupComplete}
-          />
-          <Toast message={toast.msg} visible={toast.visible} />
-        </div>
-      </AppContext.Provider>
-    );
-  }
-
-  // Render lock screen
-  if (isLocked && state.pin) {
+  // Render lock screen (default PIN 000000 until changed)
+  if (isLocked && state.onboardingSeen) {
     return (
       <AppContext.Provider value={contextValue}>
         <div className="app-shell">
           <PinScreen
             mode="verify"
-            existingHash={state.pin}
+            existingHash={state.pin || undefined}
             onComplete={handlePinVerify}
             scrambleKeypad={state.scrambleKeypad}
             panicWipeEnabled={state.panicWipeEnabled}
@@ -284,7 +258,6 @@ const App: React.FC = () => {
           {currentPage === 'home' && <HomePage />}
           {currentPage === 'manage' && <ManagePage />}
           {currentPage === 'restock' && <RestockPage />}
-          {currentPage === 'shopping' && <ShoppingPage />}
           {currentPage === 'profile' && <ProfilePage onOpenChangePin={() => setChangingPin(true)} />}
         </div>
 

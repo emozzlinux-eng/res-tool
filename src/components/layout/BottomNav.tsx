@@ -1,5 +1,5 @@
 import React from 'react';
-import { Home, ClipboardList, Package, ShoppingCart, User, type LucideIcon } from 'lucide-react';
+import { Home, ClipboardList, Package, User, type LucideIcon } from 'lucide-react';
 import { Page } from '../../types';
 
 interface BottomNavProps {
@@ -17,7 +17,6 @@ const navItems: NavItem[] = [
   { page: 'home', label: 'Home', Icon: Home },
   { page: 'manage', label: 'Manage', Icon: ClipboardList },
   { page: 'restock', label: 'Restock', Icon: Package },
-  { page: 'shopping', label: 'List', Icon: ShoppingCart },
   { page: 'profile', label: 'Profile', Icon: User },
 ];
 
