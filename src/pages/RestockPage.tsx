@@ -284,6 +284,7 @@ export const RestockPage: React.FC = () => {
         >
           <div
             className="w-full max-w-[414px] max-h-[80vh] overflow-y-auto overscroll-contain bg-[var(--surface)] rounded-t-2xl sm:rounded-2xl p-4"
+            style={{ touchAction: 'pan-y' }} /* ensure native touch scrolling inside the sheet */
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-3">

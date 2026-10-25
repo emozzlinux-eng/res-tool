@@ -1150,7 +1150,7 @@ html, body {
   font-size: 11px;
 }
 .ql-row::-webkit-scrollbar { display: none; }
-.ql-row { scrollbar-width: none; }
+.ql-row { scrollbar-width: none; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; }
 
 /* Privacy: lock-on-hide blur + panic area on login */
 .page-stage--blurrable.privacy-hidden {
