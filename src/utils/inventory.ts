@@ -325,22 +325,30 @@ export const entryValue = (state: AppState, e: DailyLogEntry): number => {
 };
 
 /**
+ * Memoized per-entry unit price for iterating over a log against an unchanged
+ * state. Recipe/raw-item lookups are cached per name — pricing a whole month
+ * of entries no longer re-scans recipes and items for every single row.
+ */
+export const memoizedUnitPrice = (state: AppState): ((name: string) => number) => {
+  const cache = new Map<string, number>();
+  return (name) => {
+    const cached = cache.get(name);
+    if (cached !== undefined) return cached;
+    const rc = recipeCost(state, name);
+    const unitPrice = rc ? rc.total : state.rawItems.find((i) => i.name === name)?.costPerUnit ?? 0;
+    cache.set(name, unitPrice);
+    return unitPrice;
+  };
+};
+
+/**
  * Memoized `entryValue` for iterating over a log against an unchanged state.
  * Recipe lookups are cached per food name — pricing a whole month of entries
  * no longer re-scans recipes and items for every single row.
  */
 const memoizedEntryValue = (state: AppState): ((e: DailyLogEntry) => number) => {
-  const cache = new Map<string, number>();
-  return (e) => {
-    const cached = cache.get(e.name);
-    if (cached !== undefined) return cached * (parseFloat(e.qty) || 0);
-    const rc = recipeCost(state, e.name);
-    const unitPrice = rc
-      ? rc.total
-      : state.rawItems.find((i) => i.name === e.name)?.costPerUnit ?? 0;
-    cache.set(e.name, unitPrice);
-    return unitPrice * (parseFloat(e.qty) || 0);
-  };
+  const unitPrice = memoizedUnitPrice(state);
+  return (e) => unitPrice(e.name) * (parseFloat(e.qty) || 0);
 };
 
 /**

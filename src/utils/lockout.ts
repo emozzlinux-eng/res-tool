@@ -8,7 +8,7 @@ const FAILED_KEY = 'inventoryPro_failed';
 const LOCK_KEY = 'inventoryPro_lockUntil';
 
 /** All localStorage keys owned by this app's state & security counters. */
-export const APP_STORAGE_KEYS = ['inventoryPro_state', FAILED_KEY, LOCK_KEY] as const;
+export const APP_STORAGE_KEYS = ['inventoryPro_state', FAILED_KEY, LOCK_KEY, 'inventoryPro_panicWipe'] as const;
 
 export const getFailedAttempts = (): number => {
   try {

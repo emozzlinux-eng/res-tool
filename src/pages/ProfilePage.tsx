@@ -7,7 +7,7 @@ import { ToggleSwitch } from '../components/ui/ToggleSwitch';
 import { useApp } from '../hooks/useAppState';
 import { Food, RawItem, Recipe, Supplier } from '../types';
 import { DEFAULT_STATE } from '../types';
-import { clearState, normalizeState } from '../utils/storage';
+import { clearState, normalizeState, persistPanicWipeEnabled } from '../utils/storage';
 import { sanitize } from '../utils/helpers';
 import { recipeCost } from '../utils/inventory';
 import { downloadFile, logToCsv } from '../utils/export';
@@ -500,7 +500,15 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ onOpenChangePin }) => 
               <div className="settings-item__label">Panic Erase Option</div>
               <div className="settings-item__desc">Offer “erase all data” after 5 wrong PINs (requires your correct PIN to fire)</div>
             </div>
-            <ToggleSwitch checked={state.panicWipeEnabled} onChange={(c) => updateState({ panicWipeEnabled: c })} label="" />
+            <ToggleSwitch
+              checked={state.panicWipeEnabled}
+              onChange={(c) => {
+                // Persist to its own key (not the backup blob) — see storage.ts
+                persistPanicWipeEnabled(c);
+                updateState({ panicWipeEnabled: c });
+              }}
+              label=""
+            />
           </div>
         </div>
       </div>

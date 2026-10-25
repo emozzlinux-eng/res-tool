@@ -30,8 +30,11 @@ export const Sheet = ({ title, onClose, children, variant = 'sheet' }: SheetProp
     const first = panel?.querySelector<HTMLElement>(FOCUSABLE);
     (first ?? panel)?.focus();
 
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+    // Note: the app shell already locks native scrolling (html/body/#root have
+    // overflow:hidden), and each Sheet renders in its own fixed overlay, so an
+    // imperative body lock here would be redundant — and restoring a captured
+    // style string could permanently "leak" overflow:hidden across overlapping
+    // sheets. Nothing to restore on close.
 
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -60,7 +63,6 @@ export const Sheet = ({ title, onClose, children, variant = 'sheet' }: SheetProp
     window.addEventListener('keydown', onKey, true);
     return () => {
       window.removeEventListener('keydown', onKey, true);
-      document.body.style.overflow = prevOverflow;
       const prev = previouslyFocused.current as HTMLElement | null;
       prev?.focus?.();
     };

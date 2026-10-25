@@ -283,7 +283,7 @@ export const RestockPage: React.FC = () => {
           aria-label="Generated purchase orders"
         >
           <div
-            className="w-full max-w-[414px] max-h-[80vh] overflow-y-auto bg-[var(--surface)] rounded-t-2xl sm:rounded-2xl p-4"
+            className="w-full max-w-[414px] max-h-[80vh] overflow-y-auto overscroll-contain bg-[var(--surface)] rounded-t-2xl sm:rounded-2xl p-4"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-3">
