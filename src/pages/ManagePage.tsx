@@ -11,6 +11,7 @@ import {
   StockChange,
 } from '../utils/inventory';
 import { generateId, getCurrentTime } from '../utils/helpers';
+import { downloadFile, logToCsv } from '../utils/export';
 
 type LogType = DailyLogEntry['type'];
 
@@ -231,7 +232,24 @@ export const ManagePage: React.FC = () => {
 
       {/* Today's log */}
       <Card>
-        <h3 className="card__title">Today’s Entries ({todayLog.length})</h3>
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="card__title mb-0">Today’s Entries ({todayLog.length})</h3>
+          <button
+            onClick={() => {
+              if (state.dailyLog.length === 0) {
+                showToast('Nothing to export yet');
+                return;
+              }
+              downloadFile(`production-log-${new Date().toISOString().slice(0, 10)}.csv`, logToCsv(state.dailyLog));
+              showToast('Log exported as CSV');
+            }}
+            aria-label="Export full log as CSV"
+            title="Export full log as CSV"
+            className="text-xs font-medium text-[var(--primary)] underline px-2 py-1"
+          >
+            Export CSV
+          </button>
+        </div>
         {todayLog.length === 0 ? (
           <p className="text-sm text-[var(--text-muted)] py-4 text-center">
             Nothing logged yet today.

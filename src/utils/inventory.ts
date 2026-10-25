@@ -182,3 +182,60 @@ export const producedToday = (log: DailyLogEntry[]): number =>
  */
 export const wasteToday = (log: DailyLogEntry[]): number =>
   todaysEntries(log).filter((e) => e.type === 'waste').length;
+
+/* ------------------------------------------------------------------ */
+/* Cost helpers                                                        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Estimated ingredient cost to produce one unit of a food, based on the
+ * recipe and each raw item's costPerUnit. Returns null when the food has
+ * no recipe or no ingredient costs are set.
+ */
+export const recipeCost = (
+  state: AppState,
+  foodName: string
+): { total: number; lines: { itemName: string; qty: number; cost: number }[] } | null => {
+  const recipe = state.recipes.find((r) => r.foodName === foodName);
+  if (!recipe) return null;
+  let total = 0;
+  let anyCost = false;
+  const lines = recipe.ingredients.map((ing) => {
+    const item = state.rawItems.find((i) => i.name === ing.itemName);
+    const unitCost = item?.costPerUnit ?? 0;
+    const cost = unitCost * ing.qty;
+    if (unitCost > 0) anyCost = true;
+    total += cost;
+    return { itemName: ing.itemName, qty: ing.qty, cost };
+  });
+  if (!anyCost) return null;
+  return { total: Math.round(total * 100) / 100, lines };
+};
+
+/**
+ * Total monetary value of the stock currently on the shelves.
+ */
+export const inventoryValue = (items: RawItem[]): number =>
+  Math.round(
+    items.reduce((sum, i) => sum + i.currentStock * (i.costPerUnit ?? 0), 0) * 100
+  ) / 100;
+
+/**
+ * Value of everything wasted today (waste entries priced via recipes or the
+ * raw item's own cost).
+ */
+export const wasteValueToday = (state: AppState): number => {
+  const entries = todaysEntries(state.dailyLog).filter((e) => e.type === 'waste');
+  let total = 0;
+  for (const e of entries) {
+    const qty = parseFloat(e.qty) || 0;
+    const rc = recipeCost(state, e.name);
+    if (rc) {
+      total += rc.total * qty;
+      continue;
+    }
+    const raw = state.rawItems.find((i) => i.name === e.name);
+    if (raw?.costPerUnit) total += raw.costPerUnit * qty;
+  }
+  return Math.round(total * 100) / 100;
+};

@@ -9,6 +9,7 @@ import { Onboarding } from './components/auth/Onboarding';
 import { HomePage } from './pages/HomePage';
 import { ManagePage } from './pages/ManagePage';
 import { RestockPage } from './pages/RestockPage';
+import { ShoppingPage } from './pages/ShoppingPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { Page } from './types';
 
@@ -16,6 +17,7 @@ const pageTitles: Record<Page, string> = {
   home: 'Dashboard',
   manage: 'Manage',
   restock: 'Inventory',
+  shopping: 'List',
   profile: 'Profile',
 };
 
@@ -87,6 +89,7 @@ const App: React.FC = () => {
       if (e.key === 'o') setCurrentPage('manage');
       if (e.key === 'w') setCurrentPage('manage');
       if (e.key === 'r') setCurrentPage('restock');
+      if (e.key === 'l') setCurrentPage('shopping');
       if (e.key === 'Escape') setCurrentPage('home');
     };
     window.addEventListener('keydown', handleKey);
@@ -256,6 +259,7 @@ const App: React.FC = () => {
         {currentPage === 'home' && <HomePage />}
         {currentPage === 'manage' && <ManagePage />}
         {currentPage === 'restock' && <RestockPage />}
+        {currentPage === 'shopping' && <ShoppingPage />}
         {currentPage === 'profile' && <ProfilePage onOpenChangePin={() => setChangingPin(true)} />}
 
         {/* Bottom Navigation */}

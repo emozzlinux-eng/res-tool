@@ -6,6 +6,7 @@ import {
   producedToday,
   todaysEntries,
   wasteToday,
+  wasteValueToday,
 } from '../utils/inventory';
 import { formatTimeAgo, getFormattedDate, getGreeting } from '../utils/helpers';
 
@@ -16,6 +17,8 @@ export const HomePage: React.FC = () => {
   const wasteCount = wasteToday(state.dailyLog);
   const restockCount = todaysEntries(state.dailyLog).filter((e) => e.type === 'restock').length;
   const shortages = useMemo(() => findShortages(state.rawItems), [state.rawItems]);
+  const wasteValue = wasteValueToday(state);
+  const pendingList = (state.shoppingList ?? []).filter((i) => !i.done).length;
   const recent = state.activityLog.slice(0, 6);
 
   const stats = [
@@ -45,6 +48,34 @@ export const HomePage: React.FC = () => {
           </Card>
         ))}
       </div>
+
+      {/* Quick actions */}
+      <div className="grid grid-cols-2 gap-3 mb-4">
+        <button
+          onClick={() => setCurrentPage('manage')}
+          className="flex items-center gap-2 p-3 rounded-[var(--radius)] bg-[var(--surface)] border border-[var(--border)] text-sm font-medium text-[var(--text-main)] active:scale-[0.98] transition-transform text-left"
+        >
+          📝 Log production
+        </button>
+        <button
+          onClick={() => setCurrentPage('shopping')}
+          className="flex items-center justify-between gap-2 p-3 rounded-[var(--radius)] bg-[var(--surface)] border border-[var(--border)] text-sm font-medium text-[var(--text-main)] active:scale-[0.98] transition-transform text-left"
+        >
+          <span>🛒 Shopping list</span>
+          {pendingList > 0 && (
+            <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-[var(--primary)] text-white text-xs font-semibold flex items-center justify-center">
+              {pendingList}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {/* Waste value banner */}
+      {wasteValue > 0 && (
+        <div className="mb-4 p-3 rounded-[var(--radius)] bg-[var(--danger-bg)] border border-[var(--danger)] text-xs text-[var(--danger)]">
+          💸 Wasted about <strong>{wasteValue.toFixed(2)}</strong> worth of stock today.
+        </div>
+      )}
 
       {/* Action Required */}
       <Card className="mb-4">

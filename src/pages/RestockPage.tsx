@@ -13,6 +13,8 @@ import {
   whatsappLink,
 } from '../utils/inventory';
 import { generateId, getCurrentTime } from '../utils/helpers';
+import { downloadFile, inventoryToCsv } from '../utils/export';
+import { inventoryValue } from '../utils/inventory';
 
 export const RestockPage: React.FC = () => {
   const { state, setState, showToast } = useApp();
@@ -92,7 +94,7 @@ export const RestockPage: React.FC = () => {
   return (
     <div className="page-content">
       {/* Summary stats */}
-      <div className="grid grid-cols-3 gap-3 mb-4">
+      <div className="grid grid-cols-4 gap-2 mb-4">
         <Card className="text-center py-4" padding="sm">
           <div className="text-lg font-bold text-[var(--text-main)]">{state.rawItems.length}</div>
           <div className="text-xs text-[var(--text-muted)]">Items</div>
@@ -103,13 +105,17 @@ export const RestockPage: React.FC = () => {
         </Card>
         <Card className="text-center py-4" padding="sm">
           <div className="text-lg font-bold text-[var(--danger)]">{outCount}</div>
-          <div className="text-xs text-[var(--text-muted)]">Out of stock</div>
+          <div className="text-xs text-[var(--text-muted)]">Out</div>
+        </Card>
+        <Card className="text-center py-4" padding="sm">
+          <div className="text-lg font-bold text-[var(--primary)]">{inventoryValue(state.rawItems)}</div>
+          <div className="text-xs text-[var(--text-muted)]">Stock value</div>
         </Card>
       </div>
 
-      {/* Search */}
-      <div className="sticky top-0 z-10 bg-[var(--bg)] pb-3 mb-3">
-        <div className="relative">
+      {/* Search + export */}
+      <div className="sticky top-0 z-10 bg-[var(--bg)] pb-3 mb-3 flex gap-2 items-center">
+        <div className="relative flex-1">
           <Search
             size={18}
             className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none"
@@ -123,6 +129,17 @@ export const RestockPage: React.FC = () => {
             className="w-full h-[52px] rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface)] pl-10 pr-3 text-[var(--text-main)] placeholder:text-[var(--text-muted)]"
           />
         </div>
+        <button
+          onClick={() => {
+            downloadFile(`inventory-${new Date().toISOString().slice(0, 10)}.csv`, inventoryToCsv(state.rawItems));
+            showToast('Inventory exported as CSV');
+          }}
+          aria-label="Export inventory as CSV"
+          title="Export inventory as CSV"
+          className="h-[52px] px-4 shrink-0 rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface)] text-sm font-medium text-[var(--primary)] active:scale-95 transition-transform"
+        >
+          CSV
+        </button>
       </div>
 
       {/* Inventory list */}
@@ -146,6 +163,9 @@ export const RestockPage: React.FC = () => {
                       </div>
                       <div className="text-xs text-[var(--text-muted)]">
                         Par: {item.parLevel} {item.unit}
+                        {(item.costPerUnit ?? 0) > 0 && (
+                          <span> · {(item.currentStock * (item.costPerUnit ?? 0)).toFixed(2)} value</span>
+                        )}
                         {isOut && (
                           <span className="ml-2 px-1.5 py-0.5 rounded bg-[var(--danger-bg)] text-[var(--danger)] font-semibold">
                             OUT

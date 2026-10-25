@@ -9,6 +9,7 @@ import { AppState, Food, RawItem, Recipe, Supplier } from '../types';
 import { DEFAULT_STATE } from '../types';
 import { clearState } from '../utils/storage';
 import { sanitize } from '../utils/helpers';
+import { recipeCost } from '../utils/inventory';
 
 type EditorKind = 'foods' | 'recipes' | 'rawItems' | 'suppliers' | null;
 
@@ -98,14 +99,14 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ onOpenChangePin }) => 
     setEditor(null);
     setEditingIndex(null);
     setFoodDraft({ name: '', icon: '🍞', category: '' });
-    setRawDraft({ name: '', icon: '📦', unit: 'kg', parLevel: '1', currentStock: '0' });
+    setRawDraft({ name: '', icon: '📦', unit: 'kg', parLevel: '1', currentStock: '0', costPerUnit: '' });
     setSupplierDraft({ name: '', phone: '', items: '' });
     setRecipeDraft({ foodName: '', lines: [] });
   };
 
   // Draft forms
   const [foodDraft, setFoodDraft] = useState({ name: '', icon: '🍞', category: '' });
-  const [rawDraft, setRawDraft] = useState({ name: '', icon: '📦', unit: 'kg', parLevel: '1', currentStock: '0' });
+  const [rawDraft, setRawDraft] = useState({ name: '', icon: '📦', unit: 'kg', parLevel: '1', currentStock: '0', costPerUnit: '' });
   const [supplierDraft, setSupplierDraft] = useState({ name: '', phone: '', items: '' });
   const [recipeDraft, setRecipeDraft] = useState<{ foodName: string; lines: { itemName: string; qty: string }[] }>({
     foodName: '',
@@ -119,7 +120,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ onOpenChangePin }) => 
       setFoodDraft({ name: f.name, icon: f.icon, category: f.category });
     } else if (kind === 'rawItems') {
       const r = state.rawItems[index];
-      setRawDraft({ name: r.name, icon: r.icon, unit: r.unit, parLevel: String(r.parLevel), currentStock: String(r.currentStock) });
+      setRawDraft({ name: r.name, icon: r.icon, unit: r.unit, parLevel: String(r.parLevel), currentStock: String(r.currentStock), costPerUnit: r.costPerUnit ? String(r.costPerUnit) : '' });
     } else if (kind === 'suppliers') {
       const s = state.suppliers[index];
       setSupplierDraft({ name: s.name, phone: s.phone, items: s.items.join(', ') });
@@ -169,6 +170,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ onOpenChangePin }) => 
       unit: rawDraft.unit.trim() || 'pcs',
       parLevel: Math.max(0, parseFloat(rawDraft.parLevel) || 0),
       currentStock: Math.max(0, parseFloat(rawDraft.currentStock) || 0),
+      costPerUnit: Math.max(0, parseFloat(rawDraft.costPerUnit) || 0),
     };
     setState((prev) => {
       if (editingIndex !== null) {
@@ -191,7 +193,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ onOpenChangePin }) => 
     });
     showToast(editingIndex !== null ? 'Item updated' : 'Item added');
     setEditingIndex(null);
-    setRawDraft({ name: '', icon: '📦', unit: 'kg', parLevel: '1', currentStock: '0' });
+    setRawDraft({ name: '', icon: '📦', unit: 'kg', parLevel: '1', currentStock: '0', costPerUnit: '' });
   };
 
   const saveSupplier = () => {
@@ -254,7 +256,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ onOpenChangePin }) => 
     }
     if (editor === 'rawItems') {
       return state.rawItems.map((r, i) => (
-        <Row key={r.name} label={`${r.icon} ${r.name}`} sub={`${r.currentStock}/${r.parLevel} ${r.unit}`} onEdit={() => loadForEdit('rawItems', i)} onDelete={() => removeAt('rawItems', i)} />
+        <Row key={r.name} label={`${r.icon} ${r.name}`} sub={`${r.currentStock}/${r.parLevel} ${r.unit}${(r.costPerUnit ?? 0) > 0 ? ` · ${r.costPerUnit}/${r.unit}` : ''}`} onEdit={() => loadForEdit('rawItems', i)} onDelete={() => removeAt('rawItems', i)} />
       ));
     }
     if (editor === 'suppliers') {
@@ -289,6 +291,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ onOpenChangePin }) => 
             <Input label="Par level" type="number" inputMode="decimal" value={rawDraft.parLevel} onChange={(e) => setRawDraft({ ...rawDraft, parLevel: e.target.value })} />
             <Input label="In stock" type="number" inputMode="decimal" value={rawDraft.currentStock} onChange={(e) => setRawDraft({ ...rawDraft, currentStock: e.target.value })} />
           </div>
+          <Input label="Cost per unit (optional)" type="number" inputMode="decimal" min="0" step="0.01" value={rawDraft.costPerUnit} onChange={(e) => setRawDraft({ ...rawDraft, costPerUnit: e.target.value })} placeholder="e.g. 1.20" hint="Used for recipe costs and waste value" />
           <Button fullWidth onClick={saveRawItem}>{editingIndex !== null ? 'Save changes' : 'Add item'}</Button>
         </div>
       );
@@ -366,6 +369,21 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ onOpenChangePin }) => 
         >
           Add ingredient
         </Button>
+        {(() => {
+          const rc = recipeDraft.foodName ? recipeCost(state, recipeDraft.foodName) : null;
+          if (!rc) return null;
+          return (
+            <div className="p-3 rounded-[var(--radius-sm)] bg-[var(--surface-2)] border border-[var(--border)] text-xs text-[var(--text-sub)]">
+              <strong className="text-[var(--text-main)]">Estimated ingredient cost: {rc.total.toFixed(2)} per unit</strong>
+              <div className="mt-1 space-y-0.5">
+                {rc.lines.filter((l) => l.cost > 0).map((l) => (
+                  <div key={l.itemName}>• {l.itemName}: {l.qty} × {state.rawItems.find((r) => r.name === l.itemName)?.costPerUnit?.toFixed(2)} = {l.cost.toFixed(2)}</div>
+                ))}
+              </div>
+              <div className="mt-1 text-[var(--text-muted)]">Set a cost per unit on raw items (edit an item) to see real numbers.</div>
+            </div>
+          );
+        })()}
         <Button fullWidth onClick={saveRecipe}>{editingIndex !== null ? 'Save changes' : 'Save recipe'}</Button>
       </div>
     );

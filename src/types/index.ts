@@ -10,6 +10,17 @@ export interface RawItem {
   unit: string;
   parLevel: number;
   currentStock: number;
+  /** Purchase cost per unit, in the shop's currency. Optional (0 assumed). */
+  costPerUnit?: number;
+}
+
+/** A shopping / to-buy list item, independent from inventory logging. */
+export interface ShoppingItem {
+  id: string;
+  text: string;
+  qty?: string;
+  done: boolean;
+  addedAt: number;
 }
 
 export interface RecipeIngredient {
@@ -58,6 +69,7 @@ export interface AppState {
   suppliers: Supplier[];
   dailyLog: DailyLogEntry[];
   activityLog: ActivityEntry[];
+  shoppingList: ShoppingItem[];
   pin: string;
   onboardingSeen: boolean;
   darkMode: boolean;
@@ -65,7 +77,7 @@ export interface AppState {
   userName: string;
 }
 
-export type Page = 'home' | 'manage' | 'restock' | 'profile';
+export type Page = 'home' | 'manage' | 'restock' | 'shopping' | 'profile';
 
 export const DEFAULT_STATE: AppState = {
   foods: [
@@ -75,11 +87,11 @@ export const DEFAULT_STATE: AppState = {
     { name: 'Muffin', icon: '🧁', category: 'Pastries' },
   ],
   rawItems: [
-    { name: 'All-Purpose Flour', icon: '🌾', unit: 'kg', parLevel: 20, currentStock: 45 },
-    { name: 'Unsalted Butter', icon: '🧈', unit: 'kg', parLevel: 10, currentStock: 5 },
-    { name: 'Sugar', icon: '🍬', unit: 'kg', parLevel: 15, currentStock: 18 },
-    { name: 'Vanilla Extract', icon: '🧪', unit: 'btl', parLevel: 3, currentStock: 0 },
-    { name: 'Active Dry Yeast', icon: '🫧', unit: 'pkg', parLevel: 10, currentStock: 12 },
+    { name: 'All-Purpose Flour', icon: '🌾', unit: 'kg', parLevel: 20, currentStock: 45, costPerUnit: 1.2 },
+    { name: 'Unsalted Butter', icon: '🧈', unit: 'kg', parLevel: 10, currentStock: 5, costPerUnit: 8.5 },
+    { name: 'Sugar', icon: '🍬', unit: 'kg', parLevel: 15, currentStock: 18, costPerUnit: 0.9 },
+    { name: 'Vanilla Extract', icon: '🧪', unit: 'btl', parLevel: 3, currentStock: 0, costPerUnit: 6 },
+    { name: 'Active Dry Yeast', icon: '🫧', unit: 'pkg', parLevel: 10, currentStock: 12, costPerUnit: 1.5 },
   ],
   recipes: [
     { foodName: 'Croissant', ingredients: [{ itemName: 'All-Purpose Flour', qty: 0.2 }, { itemName: 'Unsalted Butter', qty: 0.05 }, { itemName: 'Sugar', qty: 0.02 }] },
@@ -93,6 +105,7 @@ export const DEFAULT_STATE: AppState = {
   ],
   dailyLog: [],
   activityLog: [],
+  shoppingList: [],
   pin: '',
   onboardingSeen: false,
   darkMode: false,
