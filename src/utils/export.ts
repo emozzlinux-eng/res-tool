@@ -1,10 +1,21 @@
 import { DailyLogEntry, RawItem } from '../types';
 
+/**
+ * Neutralize spreadsheet formula injection (CSV/Excel "DDE" attacks).
+ * Item names & reasons are user-editable free text; a value starting with
+ * = + - @ (or a tab/CR used to force a formula) would execute when the export
+ * is opened in Excel/Sheets. Prefixing an apostrophe keeps the text visible
+ * but stops evaluation.
+ */
+export const defuseFormula = (value: string): string =>
+  /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+
 const escapeCsv = (value: string): string => {
-  if (/[",\n]/.test(value)) {
-    return `"${value.replace(/"/g, '""')}"`;
+  const safe = defuseFormula(value);
+  if (/[",\n]/.test(safe)) {
+    return `"${safe.replace(/"/g, '""')}"`;
   }
-  return value;
+  return safe;
 };
 
 const csvRow = (cells: (string | number)[]): string =>

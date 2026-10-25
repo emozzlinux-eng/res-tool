@@ -26,12 +26,19 @@ export const Sheet = ({ title, onClose, children, variant = 'sheet' }: SheetProp
   useEffect(() => {
     previouslyFocused.current = document.activeElement;
     const panel = panelRef.current;
+    // Start each sheet at the top so it never opens mid-scroll.
+    panel?.scrollTo(0, 0);
     // Move focus into the dialog immediately (keyboard/screen-reader users).
+    // focus({ preventScroll }) avoids yanking the freshly-reset scroll position
+    // down to the first focusable element.
     const first = panel?.querySelector<HTMLElement>(FOCUSABLE);
-    (first ?? panel)?.focus();
+    (first ?? panel)?.focus({ preventScroll: true });
 
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+    // Note: the app shell already locks native scrolling (html/body/#root have
+    // overflow:hidden), and each Sheet renders in its own fixed overlay, so an
+    // imperative body lock here would be redundant — and restoring a captured
+    // style string could permanently "leak" overflow:hidden across overlapping
+    // sheets. Nothing to restore on close.
 
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -60,22 +67,25 @@ export const Sheet = ({ title, onClose, children, variant = 'sheet' }: SheetProp
     window.addEventListener('keydown', onKey, true);
     return () => {
       window.removeEventListener('keydown', onKey, true);
-      document.body.style.overflow = prevOverflow;
       const prev = previouslyFocused.current as HTMLElement | null;
       prev?.focus?.();
     };
   }, [onClose]);
 
   return (
-    <div className="sheet-overlay" onClick={onClose}>
+    <div className="sheet-overlay" onMouseDown={onClose}>
       <div
         ref={panelRef}
+        // overscroll-behavior: contain stops scroll-chaining; touch-action:
+        // pan-y guarantees native touch scrolling inside the panel even when
+        // Tailwind preflight or a global rule sets touch-action: manipulation.
+        style={{ overscrollBehavior: 'contain', touchAction: 'pan-y' }}
         className={variant === 'center' ? 'sheet-panel sheet-panel--center' : 'sheet-panel'}
         role="dialog"
         aria-modal="true"
         aria-label={title}
         tabIndex={-1}
-        onClick={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
       >
         {variant !== 'center' && <div className="sheet-handle" aria-hidden="true" />}
         <div className="flex items-center justify-between mb-3">

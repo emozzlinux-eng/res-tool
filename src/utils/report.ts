@@ -1,5 +1,6 @@
 import { AppState, DailyLogEntry } from '../types';
-import { entryValue } from './inventory';
+import { memoizedUnitPrice } from './inventory';
+import { defuseFormula } from './export';
 
 /* xlsx (~900 kB) is loaded lazily only when a report is actually exported,
    keeping the mobile initial bundle small. */
@@ -50,12 +51,12 @@ export const monthSummary = (
   let producedValue = 0;
   const days = new Set<string>();
   // Price each distinct item once instead of re-scanning recipes per row
-  const price = (e: DailyLogEntry) => entryValue(state, e);
+  const price = memoizedUnitPrice(state);
 
   for (const e of monthEntries) {
     days.add(new Date(e.timestamp).toLocaleDateString('en-CA'));
     const qty = parseFloat(e.qty) || 0;
-    const value = price(e);
+    const value = price(e.name) * qty;
     if (e.type === 'output') {
       producedCount += qty;
       producedValue += value;
@@ -135,9 +136,13 @@ export const exportMonthReport = async (state: AppState, year: number, month: nu
   }
   [...byFood.entries()]
     .sort((a, b) => b[1] - a[1])
-    .forEach(([name, qty]) => summaryRows.push([name, qty]));
+    .forEach(([name, qty]) => summaryRows.push([defuseFormula(name), qty]));
 
   const detailHeader = ['Date', 'Time', 'Item', 'Quantity', 'Reason', 'Est. value'];
+  // One shared price cache for every row of this report (previously each row
+  // re-scanned recipes + raw items via entryValue — O(rows × recipes × items)).
+  const unitPrice = memoizedUnitPrice(state);
+  const text = (v: string): string => defuseFormula(v);
   const detailRows = (type: DailyLogEntry['type']): (string | number)[][] => {
     const rows: (string | number)[][] = [detailHeader];
     for (const e of entries) {
@@ -145,10 +150,10 @@ export const exportMonthReport = async (state: AppState, year: number, month: nu
       rows.push([
         new Date(e.timestamp).toLocaleDateString('en-CA'),
         e.time,
-        e.name,
+        text(e.name),
         parseFloat(e.qty) || 0,
-        e.reason ?? '',
-        round2(entryValue(state, e)),
+        text(e.reason ?? ''),
+        round2(unitPrice(e.name) * (parseFloat(e.qty) || 0)),
       ]);
     }
     return rows;
@@ -157,8 +162,8 @@ export const exportMonthReport = async (state: AppState, year: number, month: nu
   const inventoryRows: (string | number)[][] = [
     ['Item', 'Unit', 'Current Stock', 'Par Level', 'Cost per Unit', 'Stock Value'],
     ...state.rawItems.map((i) => [
-      i.name,
-      i.unit,
+      text(i.name),
+      text(i.unit),
       i.currentStock,
       i.parLevel,
       i.costPerUnit ?? '',
@@ -172,9 +177,9 @@ export const exportMonthReport = async (state: AppState, year: number, month: nu
       new Date(e.timestamp).toLocaleDateString('en-CA'),
       e.time,
       e.type,
-      e.name,
+      text(e.name),
       parseFloat(e.qty) || 0,
-      e.reason ?? '',
+      text(e.reason ?? ''),
     ]),
   ];
 
