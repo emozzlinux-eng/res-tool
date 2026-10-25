@@ -48,7 +48,7 @@ export interface SyncQueueEntry {
   id: string;
   op: 'SET' | 'REMOVE';
   key: string;
-  data: any;
+  data: unknown;
   timestamp: number;
   retryCount: number;
 }
