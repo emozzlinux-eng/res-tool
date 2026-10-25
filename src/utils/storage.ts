@@ -131,7 +131,10 @@ export const loadState = (): AppState => {
  */
 export const saveState = (state: AppState): boolean => {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    // Bump `rev` in the persisted copy only (not in memory), so other open
+    // tabs can detect writes via the `storage` event without every keystroke
+    // cascading through React state.
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...state, rev: state.rev + 1 }));
     return true;
   } catch (e) {
     console.error('Failed to save state:', e);

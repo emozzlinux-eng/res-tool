@@ -1,5 +1,5 @@
 import { AppState, DailyLogEntry } from '../types';
-import { recipeCost } from './inventory';
+import { entryValue } from './inventory';
 
 /* xlsx (~900 kB) is loaded lazily only when a report is actually exported,
    keeping the mobile initial bundle small. */
@@ -28,16 +28,6 @@ export interface MonthSummary {
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-/** Value of one log entry priced via recipe cost or raw item cost. */
-const entryValue = (state: AppState, e: DailyLogEntry): number => {
-  const qty = parseFloat(e.qty) || 0;
-  const rc = recipeCost(state, e.name);
-  if (rc) return rc.total * qty;
-  const raw = state.rawItems.find((i) => i.name === e.name);
-  if (raw?.costPerUnit) return raw.costPerUnit * qty;
-  return 0;
-};
-
 const inMonth = (timestamp: number, year: number, month: number): boolean => {
   const d = new Date(timestamp);
   return d.getFullYear() === year && d.getMonth() + 1 === month;
@@ -46,19 +36,26 @@ const inMonth = (timestamp: number, year: number, month: number): boolean => {
 /**
  * Aggregate a month's log into headline numbers for the summary sheet.
  */
-export const monthSummary = (state: AppState, year: number, month: number): MonthSummary => {
-  const entries = state.dailyLog.filter((e) => inMonth(e.timestamp, year, month));
+export const monthSummary = (
+  state: AppState,
+  year: number,
+  month: number,
+  entries?: DailyLogEntry[]
+): MonthSummary => {
+  const monthEntries = entries ?? state.dailyLog.filter((e) => inMonth(e.timestamp, year, month));
   let producedCount = 0;
   let wasteCount = 0;
   let restockCount = 0;
   let wasteValue = 0;
   let producedValue = 0;
   const days = new Set<string>();
+  // Price each distinct item once instead of re-scanning recipes per row
+  const price = (e: DailyLogEntry) => entryValue(state, e);
 
-  for (const e of entries) {
+  for (const e of monthEntries) {
     days.add(new Date(e.timestamp).toLocaleDateString('en-CA'));
     const qty = parseFloat(e.qty) || 0;
-    const value = entryValue(state, e);
+    const value = price(e);
     if (e.type === 'output') {
       producedCount += qty;
       producedValue += value;
@@ -114,7 +111,7 @@ export const exportMonthReport = async (state: AppState, year: number, month: nu
     .filter((e) => inMonth(e.timestamp, year, month))
     .sort((a, b) => a.timestamp - b.timestamp);
 
-  const s = monthSummary(state, year, month);
+  const s = monthSummary(state, year, month, entries);
 
   const summaryRows: (string | number)[][] = [
     ['Month-End Report'],
@@ -202,9 +199,9 @@ export const exportMonthReport = async (state: AppState, year: number, month: nu
 };
 
 /** List of (year, month) pairs that actually have log entries, newest first. */
-export const monthsWithData = (state: AppState): { year: number; month: number; label: string }[] => {
+export const monthsWithData = (dailyLog: DailyLogEntry[]): { year: number; month: number; label: string }[] => {
   const seen = new Map<string, { year: number; month: number; label: string }>();
-  for (const e of state.dailyLog) {
+  for (const e of dailyLog) {
     const d = new Date(e.timestamp);
     const y = d.getFullYear();
     const m = d.getMonth() + 1;

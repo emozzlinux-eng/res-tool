@@ -47,13 +47,13 @@ export const ManagePage: React.FC = () => {
 
   // Month-end Excel report picker (bottom sheet)
   const monthOptions = useMemo(() => {
-    const opts = monthsWithData(state);
+    const opts = monthsWithData(state.dailyLog);
     if (opts.length === 0) {
       const now = new Date();
       return [{ year: now.getFullYear(), month: now.getMonth() + 1, label: now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) }];
     }
     return opts;
-  }, [state]);
+  }, [state.dailyLog]);
   const [reportMonthKey, setReportMonthKey] = useState(`${monthOptions[0].year}-${monthOptions[0].month}`);
   const [reportPickerOpen, setReportPickerOpen] = useState(false);
   // Keep the highlighted month valid as data arrives
@@ -488,7 +488,7 @@ export const ManagePage: React.FC = () => {
           fullWidth
           variant="outline"
           onClick={() => {
-            const opts = monthsWithData(state);
+            const opts = monthsWithData(state.dailyLog);
             if (opts.length === 0) {
               showToast('No entries logged yet');
               return;
