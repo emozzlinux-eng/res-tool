@@ -21,7 +21,7 @@ const reasonLabels: Record<string, string> = {
 };
 
 export const HomePage: React.FC = () => {
-  const { state, setCurrentPage } = useApp();
+  const { state, setCurrentPage, updateState } = useApp();
 
   const produced = producedToday(state.dailyLog);
   const wasteCount = wasteToday(state.dailyLog);
@@ -46,10 +46,20 @@ export const HomePage: React.FC = () => {
         <p className="text-sm text-[var(--text-sub)]">{getFormattedDate()}</p>
       </div>
 
-      {/* First-run setup checklist — shown until the workspace has data */}
-      {(state.rawItems.length === 0 || state.foods.length === 0) && (
+      {/* First-run setup checklist — stays until all four steps are done, or dismissed */}
+      {!state.setupDismissed &&
+        !(state.rawItems.length > 0 && state.foods.length > 0 && state.recipes.some((r) => r.ingredients.length > 0) && state.suppliers.length > 0) && (
         <Card className="mb-4" style={{ borderColor: 'var(--primary)' }}>
-          <h3 className="card__title">Get started — set up your workspace</h3>
+          <div className="flex items-start justify-between gap-2">
+            <h3 className="card__title">Get started — set up your workspace</h3>
+            <button
+              onClick={() => updateState({ setupDismissed: true })}
+              aria-label="Dismiss setup checklist"
+              className="w-11 h-11 -mr-2 -mt-2 flex items-center justify-center rounded-full text-[var(--text-muted)] hover:bg-[var(--surface-2)]"
+            >
+              ✕
+            </button>
+          </div>
           <div className="space-y-2 mb-3">
             {[
               { done: state.rawItems.length > 0, label: 'Add raw ingredients', hint: 'Flour, butter… with units, par levels & costs' },
