@@ -35,10 +35,15 @@ export const applyStockChanges = (
   changes: StockChange[]
 ): RawItem[] => {
   if (changes.length === 0) return items;
+  // Aggregate deltas once (O(changes)) instead of filtering the full change
+  // list for every item (which was O(items × changes)).
+  const totals = new Map<string, number>();
+  for (const c of changes) {
+    totals.set(c.itemName, (totals.get(c.itemName) ?? 0) + c.delta);
+  }
   return items.map((item) => {
-    const relevant = changes.filter((c) => c.itemName === item.name);
-    if (relevant.length === 0) return item;
-    const total = relevant.reduce((sum, c) => sum + c.delta, 0);
+    const total = totals.get(item.name);
+    if (total === undefined) return item;
     const next = Math.round((item.currentStock + total) * 1000) / 1000;
     return { ...item, currentStock: Math.max(0, next) };
   });
@@ -122,12 +127,14 @@ export const appliedChanges = (
   changes: StockChange[]
 ): StockChange[] => {
   if (changes.length === 0) return [];
+  const beforeByName = new Map(before.map((i) => [i.name, i.currentStock]));
+  const afterByName = new Map(after.map((i) => [i.name, i.currentStock]));
   return changes
     .map((c) => {
-      const b = before.find((i) => i.name === c.itemName);
-      const a = after.find((i) => i.name === c.itemName);
-      if (!b || !a) return null;
-      const delta = Math.round((a.currentStock - b.currentStock) * 1000) / 1000;
+      const b = beforeByName.get(c.itemName);
+      const a = afterByName.get(c.itemName);
+      if (b === undefined || a === undefined) return null;
+      const delta = Math.round((a - b) * 1000) / 1000;
       return delta === 0 ? null : { itemName: c.itemName, delta };
     })
     .filter((c): c is StockChange => c !== null);
@@ -282,10 +289,13 @@ export const recipeCost = (
 ): { total: number; lines: { itemName: string; qty: number; cost: number }[] } | null => {
   const recipe = state.recipes.find((r) => r.foodName === foodName);
   if (!recipe) return null;
+  // Index items by name once — avoids an O(recipes × ingredients × items)
+  // scan when this runs over a whole log window.
+  const itemByName = new Map(state.rawItems.map((i) => [i.name, i]));
   let total = 0;
   let anyCost = false;
   const lines = recipe.ingredients.map((ing) => {
-    const item = state.rawItems.find((i) => i.name === ing.itemName);
+    const item = itemByName.get(ing.itemName);
     const unitCost = item?.costPerUnit ?? 0;
     const cost = unitCost * ing.qty;
     if (unitCost > 0) anyCost = true;
@@ -305,7 +315,7 @@ export const inventoryValue = (items: RawItem[]): number =>
   ) / 100;
 
 /** Price one entry (recipe cost or raw cost). Shared with report.ts semantics. */
-const entryValue = (state: AppState, e: DailyLogEntry): number => {
+export const entryValue = (state: AppState, e: DailyLogEntry): number => {
   const qty = parseFloat(e.qty) || 0;
   const rc = recipeCost(state, e.name);
   if (rc) return rc.total * qty;
@@ -315,12 +325,32 @@ const entryValue = (state: AppState, e: DailyLogEntry): number => {
 };
 
 /**
+ * Memoized `entryValue` for iterating over a log against an unchanged state.
+ * Recipe lookups are cached per food name — pricing a whole month of entries
+ * no longer re-scans recipes and items for every single row.
+ */
+const memoizedEntryValue = (state: AppState): ((e: DailyLogEntry) => number) => {
+  const cache = new Map<string, number>();
+  return (e) => {
+    const cached = cache.get(e.name);
+    if (cached !== undefined) return cached * (parseFloat(e.qty) || 0);
+    const rc = recipeCost(state, e.name);
+    const unitPrice = rc
+      ? rc.total
+      : state.rawItems.find((i) => i.name === e.name)?.costPerUnit ?? 0;
+    cache.set(e.name, unitPrice);
+    return unitPrice * (parseFloat(e.qty) || 0);
+  };
+};
+
+/**
  * Value of everything wasted today (waste entries priced via recipes or the
  * raw item's own cost).
  */
 export const wasteValueToday = (state: AppState): number => {
+  const price = memoizedEntryValue(state);
   const entries = todaysEntries(state.dailyLog).filter((e) => e.type === 'waste');
-  const total = entries.reduce((sum, e) => sum + entryValue(state, e), 0);
+  const total = entries.reduce((sum, e) => sum + price(e), 0);
   return Math.round(total * 100) / 100;
 };
 
@@ -417,6 +447,7 @@ export interface WastePatterns {
 }
 
 export const wastePatterns = (state: AppState, days = 30): WastePatterns => {
+  const price = memoizedEntryValue(state);
   const window = entriesWithinDays(state.dailyLog, days).filter((e) => e.type === 'waste');
   const reasonMap = new Map<string, { count: number; qty: number; value: number }>();
   const itemMap = new Map<string, { count: number; qty: number; value: number }>();
@@ -424,7 +455,7 @@ export const wastePatterns = (state: AppState, days = 30): WastePatterns => {
 
   for (const e of window) {
     const qty = parseFloat(e.qty) || 0;
-    const value = entryValue(state, e);
+    const value = price(e);
     const reason = e.reason ?? 'unspecified';
     const r = reasonMap.get(reason) ?? { count: 0, qty: 0, value: 0 };
     r.count += 1; r.qty += qty; r.value += value;
@@ -464,34 +495,38 @@ export interface DayPoint {
 }
 
 export const dailyTrend = (state: AppState, days = 7): DayPoint[] => {
-  const out: DayPoint[] = [];
+  const price = memoizedEntryValue(state);
   const now = new Date();
-  const window = entriesWithinDays(state.dailyLog, days);
+  // Bucket the window once by day key — avoids scanning every entry for each
+  // of the `days` output points (was O(days × entries)).
+  const buckets = new Map<string, DayPoint>();
   for (let i = days - 1; i >= 0; i--) {
     const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
-    const key = d.toLocaleDateString('en-CA');
-    const point: DayPoint = {
-      key,
+    buckets.set(d.toLocaleDateString('en-CA'), {
+      key: d.toLocaleDateString('en-CA'),
       label: d.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric' }),
       produced: 0,
       wasted: 0,
       restocked: 0,
       wasteValue: 0,
-    };
-    for (const e of window) {
-      if (new Date(e.timestamp).toLocaleDateString('en-CA') !== key) continue;
-      const qty = parseFloat(e.qty) || 0;
-      if (e.type === 'output') point.produced += qty;
-      else if (e.type === 'waste') {
-        point.wasted += qty;
-        point.wasteValue += entryValue(state, e);
-      } else point.restocked += qty;
-    }
-    point.wasted = Math.round(point.wasted * 100) / 100;
-    point.produced = Math.round(point.produced * 100) / 100;
-    point.restocked = Math.round(point.restocked * 100) / 100;
-    point.wasteValue = Math.round(point.wasteValue * 100) / 100;
-    out.push(point);
+    });
   }
-  return out;
+  for (const e of entriesWithinDays(state.dailyLog, days)) {
+    const point = buckets.get(new Date(e.timestamp).toLocaleDateString('en-CA'));
+    if (!point) continue;
+    const qty = parseFloat(e.qty) || 0;
+    if (e.type === 'output') point.produced += qty;
+    else if (e.type === 'waste') {
+      point.wasted += qty;
+      point.wasteValue += price(e);
+    } else point.restocked += qty;
+  }
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+  for (const p of buckets.values()) {
+    p.produced = round2(p.produced);
+    p.wasted = round2(p.wasted);
+    p.restocked = round2(p.restocked);
+    p.wasteValue = round2(p.wasteValue);
+  }
+  return [...buckets.values()];
 };

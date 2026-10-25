@@ -19,6 +19,9 @@ export const AppContext = createContext<AppContextType>({} as AppContextType);
 
 export const useApp = () => useContext(AppContext);
 
+/** Debounce window for persisting the workspace blob to localStorage (ms). */
+const SAVE_DEBOUNCE_MS = 400;
+
 /**
  * Correct mobile viewport height. On iOS Safari `100%`/`100vh` ignore the
  * dynamic URL bar, which hides the bottom nav and FAB when the bar is showing.
@@ -44,33 +47,59 @@ export const useAppState = () => {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [toast, setToast] = useState({ msg: '', visible: false });
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const savedOnce = useRef(false);
+  // Latest state, readable from stable event handlers (flush-on-hide)
+  const stateRef = useRef(state);
+  stateRef.current = state;
   // Timestamp of the last successful write to localStorage (for "Saved locally · …")
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
 
   useMobileViewportHeight();
 
-  // Save state on change — surface quota errors instead of losing data silently
+  // Save state on change — debounced so rapid typing in editors doesn't
+  // re-serialize the whole workspace blob on every keystroke. Surface quota
+  // errors instead of losing data silently, and flush on tab close.
   useEffect(() => {
     // Skip the initial "save what we just loaded" write
     if (!savedOnce.current) {
       savedOnce.current = true;
       return;
     }
-    const ok = saveState(state);
-    if (ok) {
-      setLastSavedAt(Date.now());
-    } else {
-      setToast({ msg: '⚠️ Storage full — recent changes may not be saved. Export a backup!', visible: true });
-      if (toastTimer.current) clearTimeout(toastTimer.current);
-      toastTimer.current = setTimeout(() => setToast((t) => ({ ...t, visible: false })), 5000);
-    }
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      const ok = saveState(state);
+      if (ok) {
+        setLastSavedAt(Date.now());
+      } else {
+        setToast({ msg: '⚠️ Storage full — recent changes may not be saved. Export a backup!', visible: true });
+        if (toastTimer.current) clearTimeout(toastTimer.current);
+        toastTimer.current = setTimeout(() => setToast((t) => ({ ...t, visible: false })), 5000);
+      }
+    }, SAVE_DEBOUNCE_MS);
   }, [state]);
 
-  // Clear pending toast timer on unmount
+  // Flush any pending save before the page is hidden/closed so no edit is lost
+  useEffect(() => {
+    const flush = () => {
+      if (!saveTimer.current) return;
+      clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+      saveState(stateRef.current);
+    };
+    document.addEventListener('visibilitychange', flush);
+    window.addEventListener('pagehide', flush);
+    return () => {
+      document.removeEventListener('visibilitychange', flush);
+      window.removeEventListener('pagehide', flush);
+    };
+  }, []);
+
+  // Clear pending timers on unmount
   useEffect(
     () => () => {
       if (toastTimer.current) clearTimeout(toastTimer.current);
+      if (saveTimer.current) clearTimeout(saveTimer.current);
     },
     []
   );
