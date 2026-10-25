@@ -1098,6 +1098,18 @@ html, body {
   from { transform: translateY(40px); opacity: 0.6; }
   to { transform: translateY(0); opacity: 1; }
 }
+
+/* Centered small-dialog variant of the sheet (replaces the old Modal) */
+.sheet-panel--center {
+  max-width: 360px;
+  border-radius: 20px;
+  padding-bottom: 20px;
+  animation: scaleIn 0.2s ease;
+  max-height: 85vh;
+}
+@media (max-width: 639px) {
+  .sheet-overlay:has(.sheet-panel--center) { align-items: center; padding: 24px; }
+}
 @keyframes fadeIn {
   from { opacity: 0; }
   to { opacity: 1; }

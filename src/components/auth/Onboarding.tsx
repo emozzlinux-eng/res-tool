@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
-import { Check, X } from 'lucide-react';
+import { useState } from 'react';
+import { Check } from 'lucide-react';
 import { Button } from '../ui/Button';
+import { Sheet } from '../ui/Sheet';
 
 interface OnboardingProps {
   onComplete: () => void;
@@ -59,18 +60,15 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
         </Button>
       </div>
 
-      {/* Skip Confirmation Modal */}
+      {/* Skip Confirmation — Sheet is the app's only modal */}
       {showSkipConfirm && (
-        <div className="modal-overlay" onClick={() => setShowSkipConfirm(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold mb-2 text-[var(--text-main)]">Skip Onboarding?</h3>
-            <p className="text-sm mb-4 text-[var(--text-sub)]">You can replay the tutorial later from Profile.</p>
-            <div className="flex gap-3">
-              <Button variant="outline" fullWidth onClick={() => setShowSkipConfirm(false)}>Cancel</Button>
-              <Button variant="primary" fullWidth onClick={onComplete}>Skip</Button>
-            </div>
+        <Sheet title="Skip Onboarding?" onClose={() => setShowSkipConfirm(false)} variant="center">
+          <p className="text-sm mb-4 text-[var(--text-sub)]">You can replay the tutorial later from Profile.</p>
+          <div className="flex gap-3">
+            <Button variant="outline" fullWidth onClick={() => setShowSkipConfirm(false)}>Cancel</Button>
+            <Button variant="primary" fullWidth onClick={onComplete}>Skip</Button>
           </div>
-        </div>
+        </Sheet>
       )}
     </div>
   );
