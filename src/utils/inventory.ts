@@ -75,6 +75,15 @@ export const reverseChanges = (changes: StockChange[]): StockChange[] =>
   changes.map((c) => ({ ...c, delta: -c.delta }));
 
 /**
+ * True when a food has a recipe with at least one ingredient line. Used to
+ * warn on the Manage page that producing this food won't deduct any stock.
+ */
+export const hasMeaningfulRecipe = (state: AppState, foodName: string): boolean => {
+  const recipe = state.recipes.find((r) => r.foodName === foodName);
+  return !!recipe && recipe.ingredients.length > 0;
+};
+
+/**
  * Build a daily-log entry together with the stock changes it applies.
  * Shared by ManagePage and RestockPage so both stay consistent.
  */
@@ -103,20 +112,52 @@ export const buildLogEntry = (
 };
 
 /**
+ * Compute the deltas that were ACTUALLY applied to stock (after - before,
+ * rounded to 3 dp). This is what gets persisted on the entry so undo reverses
+ * exactly what changed — clamped deductions must not inflate stock on undo.
+ */
+export const appliedChanges = (
+  before: RawItem[],
+  after: RawItem[],
+  changes: StockChange[]
+): StockChange[] => {
+  if (changes.length === 0) return [];
+  return changes
+    .map((c) => {
+      const b = before.find((i) => i.name === c.itemName);
+      const a = after.find((i) => i.name === c.itemName);
+      if (!b || !a) return null;
+      const delta = Math.round((a.currentStock - b.currentStock) * 1000) / 1000;
+      return delta === 0 ? null : { itemName: c.itemName, delta };
+    })
+    .filter((c): c is StockChange => c !== null);
+};
+
+/**
  * Append an entry + apply its stock changes + record activity, immutably.
- * Keeps the activity log capped at 50 entries.
+ * The entry's `stockChanges` are rewritten to the actually-applied deltas so
+ * undo restores exactly what was deducted. Keeps the activity log capped at
+ * 50 entries and carries the waste reason onto the activity badge.
  */
 export const commitLogEntry = (
   prev: AppState,
   entry: DailyLogEntry,
   changes: StockChange[],
   actionLabel: string
-): AppState => ({
-  ...prev,
-  dailyLog: [entry, ...prev.dailyLog],
-  rawItems: applyStockChanges(prev.rawItems, changes),
-  activityLog: [{ action: actionLabel, time: Date.now() }, ...prev.activityLog.slice(0, 49)],
-});
+): AppState => {
+  const nextItems = applyStockChanges(prev.rawItems, changes);
+  const applied = appliedChanges(prev.rawItems, nextItems, changes);
+  const stored: DailyLogEntry = { ...entry, stockChanges: applied };
+  return {
+    ...prev,
+    dailyLog: [stored, ...prev.dailyLog],
+    rawItems: nextItems,
+    activityLog: [
+      { action: actionLabel, time: Date.now(), ...(entry.reason ? { reason: entry.reason } : {}) },
+      ...prev.activityLog.slice(0, 49),
+    ],
+  };
+};
 
 /**
  * Find raw items that are at or below their par level (low) or at zero
@@ -155,8 +196,10 @@ export const buildOrders = (
   const claimed = new Set<string>();
 
   for (const supplier of suppliers) {
+    // Skip items already claimed by an earlier supplier (first supplier wins),
+    // so an item listed under two suppliers is only ordered once.
     const lines = shortages
-      .filter((s) => supplier.items.includes(s.item.name))
+      .filter((s) => !claimed.has(s.item.name) && supplier.items.includes(s.item.name))
       .map((s) => ({ item: s.item, qty: s.suggestedQty }));
     if (lines.length > 0) {
       orders.push({ supplier, lines });
@@ -341,13 +384,18 @@ export const hoursRemaining = (
   let firstTs = Infinity;
   for (const e of today) {
     if (e.type === 'restock') continue;
-    for (const c of e.stockChanges ?? []) {
-      if (c.itemName === item.name && c.delta < 0) {
+    // Count each entry exactly once. Entries created by commitLogEntry always
+    // carry stockChanges (including waste, whose deduction lives there), so we
+    // use those when present and only fall back to qty for legacy entries that
+    // predate stockChanges — otherwise waste would be counted twice.
+    const changes = e.stockChanges ?? [];
+    const relevant = changes.filter((c) => c.itemName === item.name && c.delta < 0);
+    if (relevant.length > 0) {
+      for (const c of relevant) {
         used += -c.delta;
         firstTs = Math.min(firstTs, e.timestamp);
       }
-    }
-    if (e.type === 'waste' && e.name === item.name) {
+    } else if (changes.length === 0 && e.type === 'waste' && e.name === item.name) {
       used += parseFloat(e.qty) || 0;
       firstTs = Math.min(firstTs, e.timestamp);
     }

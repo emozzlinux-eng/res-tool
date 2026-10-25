@@ -3,20 +3,18 @@ import { Search, Plus, X, Copy, MessageCircle, FileText } from 'lucide-react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { useApp } from '../hooks/useAppState';
-import { DailyLogEntry } from '../types';
 import {
-  applyStockChanges,
+  buildLogEntry,
   buildOrders,
+  commitLogEntry,
   findShortages,
   orderMessage,
   PurchaseOrder,
   whatsappLink,
+  inventoryValue,
 } from '../utils/inventory';
-import { generateId } from '../utils/helpers';
-import { getCurrentTime } from '../utils/format';
-import { vibrate } from '../utils/device';
+import { dayKey } from '../utils/format';
 import { downloadFile, inventoryToCsv } from '../utils/export';
-import { inventoryValue } from '../utils/inventory';
 
 export const RestockPage: React.FC = () => {
   const { state, setState, showToast, setCurrentPage } = useApp();
@@ -61,26 +59,13 @@ export const RestockPage: React.FC = () => {
     if (qty <= 0) return;
     const item = state.rawItems.find((i) => i.name === itemName);
     if (!item) return;
-    const changes = [{ itemName, delta: qty }];
-    const entry: DailyLogEntry = {
-      id: generateId(),
-      type: 'restock',
-      icon: item.icon,
-      name: itemName,
-      qty: String(qty),
-      time: getCurrentTime(),
-      timestamp: Date.now(),
-      stockChanges: changes,
-    };
-    setState((prev) => ({
-      ...prev,
-      rawItems: applyStockChanges(prev.rawItems, changes),
-      dailyLog: [entry, ...prev.dailyLog],
-      activityLog: [
-        { action: `🔵 restock (quick): ${qty} ${itemName}`, time: Date.now() },
-        ...prev.activityLog.slice(0, 49),
-      ],
-    }));
+    // Route through the shared build/commit helpers so the entry records the
+    // actually-applied deltas (undo-safe) — no duplicated logic here.
+    const built = buildLogEntry(state, 'restock', itemName, qty, item.icon);
+    if (!built) return;
+    setState((prev) =>
+      commitLogEntry(prev, built.entry, built.changes, `🔵 restock (quick): ${qty} ${itemName}`)
+    );
     showToast(`Added ${qty} ${item.unit} of ${itemName}`);
   };
 
@@ -151,7 +136,7 @@ export const RestockPage: React.FC = () => {
         </button>
         <button
           onClick={() => {
-            downloadFile(`inventory-${new Date().toISOString().slice(0, 10)}.csv`, inventoryToCsv(state.rawItems));
+            downloadFile(`inventory-${dayKey(Date.now())}.csv`, inventoryToCsv(state.rawItems));
             showToast('Inventory exported as CSV');
           }}
           aria-label="Export inventory as CSV"

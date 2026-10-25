@@ -1,15 +1,9 @@
-import React from "react";
 import ReactDOM from "react-dom/client";
 import "./index.css";
 import App from "./App.tsx";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(<App />);
 
-// Register service worker for offline support (skipped in dev)
-if ("serviceWorker" in navigator && import.meta.env.PROD) {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/sw.js").catch((err) => {
-      console.warn("Service worker registration failed:", err);
-    });
-  });
-}
+// Service worker registration is handled by vite-plugin-pwa (see vite.config.js):
+// it injects dist/registerSW.js into the built index.html and uses the Workbox
+// `prompt` flow so updates are never applied mid-session without consent.

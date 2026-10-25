@@ -15,5 +15,12 @@ export const migrateState = (state: AppState): AppState => {
     s = { ...s };
   }
 
+  if (from < 3) {
+    // v3 adds setupDismissed (Home checklist dismissal flag). The boolean has
+    // a safe default applied by normalizeState, so this step is a version
+    // stamp; Phase 2 will extend v3 with the 'adjustment' entry type.
+    s = { ...s };
+  }
+
   return { ...s, schemaVersion: SCHEMA_VERSION };
 };

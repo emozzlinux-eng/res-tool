@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { ChevronRight, Plus, Trash2, Pencil } from 'lucide-react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
@@ -11,6 +11,7 @@ import { clearState, normalizeState } from '../utils/storage';
 import { sanitize } from '../utils/helpers';
 import { recipeCost } from '../utils/inventory';
 import { downloadFile, logToCsv } from '../utils/export';
+import { dayKey } from '../utils/format';
 import { Sheet } from '../components/ui/Sheet';
 
 type EditorKind = 'foods' | 'recipes' | 'rawItems' | 'suppliers' | null;
@@ -46,7 +47,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ onOpenChangePin }) => 
   // ---------- Backup / Restore / Reset ----------
   const handleBackup = () => {
     downloadFile(
-      `inventory-pro-backup-${new Date().toISOString().slice(0, 10)}.json`,
+      `inventory-pro-backup-${dayKey(Date.now())}.json`,
       JSON.stringify(state, null, 2),
       'application/json'
     );
@@ -58,7 +59,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ onOpenChangePin }) => 
       showToast('Nothing to export yet');
       return;
     }
-    downloadFile(`inventory-pro-log-${new Date().toISOString().slice(0, 10)}.csv`, logToCsv(state.dailyLog));
+    downloadFile(`inventory-pro-log-${dayKey(Date.now())}.csv`, logToCsv(state.dailyLog));
     showToast('Log exported as CSV');
   };
 
@@ -623,7 +624,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ onOpenChangePin }) => 
 
       {/* About */}
       <div className="text-center py-4">
-        <p className="text-xs text-[var(--text-muted)]">Inventory Pro v4.2.0 · offline &amp; private by design</p>
+        <p className="text-xs text-[var(--text-muted)]">Inventory Pro v{__APP_VERSION__} · offline &amp; private by design</p>
       </div>
 
       {/* Name dialog */}

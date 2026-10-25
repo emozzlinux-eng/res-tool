@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppContext, useAppState } from './hooks/useAppState';
 import { hashPin, isLegacyPinHash } from './utils/pin';
 import { TopHeader } from './components/layout/TopHeader';
+import { UpdateBanner } from './components/layout/UpdateBanner';
 import { BottomNav } from './components/layout/BottomNav';
 import { Toast } from './components/ui/Toast';
 import { PinScreen } from './components/auth/PinScreen';
@@ -29,6 +30,7 @@ const App = () => {
     isOnline,
     currentPage,
     setCurrentPage,
+    lastSavedLabel,
   } = useAppState();
 
   const [isLocked, setIsLocked] = useState(true);
@@ -50,6 +52,8 @@ const App = () => {
     };
     const interval = setInterval(checkInactivity, 10000);
     return () => clearInterval(interval);
+    // onboardingSeen read fresh inside the interval; deps intentionally narrow (rewritten in Phase 3)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.autoLockMinutes, state.pin, showOnboarding]);
 
   // Reset activity timer on interaction
@@ -76,6 +80,8 @@ const App = () => {
     };
     document.addEventListener('visibilitychange', onHide);
     return () => document.removeEventListener('visibilitychange', onHide);
+    // onboardingSeen read fresh inside the handler; deps intentionally narrow (rewritten in Phase 3)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.privacyBlur, state.pin, showOnboarding]);
 
   // Check if first launch
@@ -84,6 +90,8 @@ const App = () => {
       setShowOnboarding(true);
       setIsLocked(false);
     }
+    // Runs only on mount to detect first launch; deps intentionally empty
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // If PIN was cleared (e.g. Reset All Data), restore the default PIN 000000
@@ -95,6 +103,8 @@ const App = () => {
         showToast('PIN reset to default: 000000');
       })();
     }
+    // updateState/showToast are stable refs from the app hook; deps intentionally narrow (rewritten in Phase 3)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.onboardingSeen, state.pin]);
 
   // Keyboard shortcuts — desktop nicety only. Escape returns to the dashboard;
@@ -240,6 +250,7 @@ const App = () => {
         <TopHeader
           title={pageTitles[currentPage]}
           isOnline={isOnline}
+          lastSavedLabel={lastSavedLabel}
           rightAction={
             <button
               onClick={lock}
@@ -268,6 +279,9 @@ const App = () => {
 
         {/* Toast */}
         <Toast message={toast.msg} visible={toast.visible} />
+
+        {/* PWA update prompt (manual reload only) */}
+        <UpdateBanner />
       </div>
     </AppContext.Provider>
   );

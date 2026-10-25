@@ -24,6 +24,23 @@ npm run build      # outputs to dist/
 
 All data lives in `localStorage` (single workspace blob) — no account or cloud sync is included. The unused Supabase/router/etc. dependencies were removed. If multi-device sync is added later, treat any shared sync key like a password and store records individually so devices can merge instead of overwrite.
 
+### xlsx advisory
+
+We keep `xlsx@0.18.5` (the last npm release). It has known advisories (prototype pollution / ReDoS in the **parser**). This app only ever **writes** spreadsheets with SheetJS and never parses untrusted `.xlsx` files, so the vulnerable code paths are not reachable. If that changes (e.g. importing workbooks from disk), switch to the maintained SheetJS build (`https://cdn.sheetjs.com`) or `exceljs` first.
+
+## Scripts
+
+```bash
+npm run dev         # Vite dev server (binds 0.0.0.0 for LAN/mobile testing)
+npm run typecheck   # tsc --noEmit
+npm run lint        # eslint .
+npm test            # vitest run
+npm run test:watch  # vitest watch mode
+npm run format      # prettier --write src
+npm run build       # production build + generated service worker (dist/)
+npm run preview     # serve the built dist/ locally
+```
+
 ## Deploy
 
 `netlify.toml` builds with Vite and publishes `dist/` with an SPA fallback redirect.

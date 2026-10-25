@@ -57,7 +57,7 @@ export interface ActivityEntry {
 }
 
 /** Current on-disk schema version — bump when AppState changes shape. */
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 export interface AppState {
   /** Bumped on every persisted save so other open tabs can detect changes. */
@@ -88,6 +88,8 @@ export interface AppState {
   themeMode: 'system' | 'light' | 'dark';
   /** Recent search terms on the Inventory page (fuzzy search history). */
   recentSearches: string[];
+  /** True once the user dismisses the Home setup checklist. */
+  setupDismissed: boolean;
 }
 
 export type Page = 'home' | 'manage' | 'restock' | 'profile';
@@ -121,6 +123,7 @@ export const DEFAULT_STATE: AppState = {
   favorites: [],
   themeMode: 'system',
   recentSearches: [],
+  setupDismissed: false,
 };
 
 /**
@@ -183,4 +186,5 @@ export const DEMO_STATE: Omit<AppState, 'pin' | 'onboardingSeen' | 'rev' | 'sche
   favorites: ['Croissant', 'Sourdough Loaf'],
   themeMode: 'system',
   recentSearches: [],
+  setupDismissed: false,
 };

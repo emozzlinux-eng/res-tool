@@ -106,6 +106,7 @@ export const normalizeState = (raw: unknown): AppState => {
     favorites: arr<string>(p.favorites).filter((n) => typeof n === 'string'),
     themeMode: p.themeMode === 'light' || p.themeMode === 'dark' ? p.themeMode : 'system',
     recentSearches: arr<string>(p.recentSearches).filter((n) => typeof n === 'string').slice(0, 8),
+    setupDismissed: bool(p.setupDismissed),
   };
 };
 

@@ -9,6 +9,7 @@ import {
   buildLogEntry,
   changesForEntry,
   commitLogEntry,
+  hasMeaningfulRecipe,
   reverseChanges,
   todaysEntries,
   StockChange,
@@ -16,6 +17,7 @@ import {
 import { vibrate } from '../utils/device';
 import { downloadFile, logToCsv } from '../utils/export';
 import { exportMonthReport, monthsWithData } from '../utils/report';
+import { dayKey } from '../utils/format';
 
 type LogType = DailyLogEntry['type'];
 
@@ -81,6 +83,10 @@ export const ManagePage: React.FC = () => {
 
   const selectedItem = candidates.find((c) => c.name === selectedName);
 
+  /** Phase 1.5: producing a food with no (or empty) recipe deducts nothing — warn. */
+  const missingRecipeNotice =
+    logType === 'output' && !!selectedItem && !hasMeaningfulRecipe(state, selectedItem.name);
+
   /** Final reason text stored on the entry (waste only). */
   const resolvedReason = reason === 'other' ? (reasonNote.trim() || 'Other') : reason || undefined;
 
@@ -95,7 +101,10 @@ export const ManagePage: React.FC = () => {
       preview.filter((c) => {
         if (c.delta >= 0) return false;
         const item = state.rawItems.find((i) => i.name === c.itemName);
-        return !item || item.currentStock < Math.abs(c.delta);
+        // Round to the same 3 dp precision applyStockChanges uses, so
+        // float noise (e.g. 0.1*3 > 0.3) never shows a false shortage.
+        const r3 = (n: number) => Math.round(n * 1000) / 1000;
+        return !item || r3(item.currentStock) < r3(Math.abs(c.delta));
       }),
     [preview, state.rawItems]
   );
@@ -120,6 +129,14 @@ export const ManagePage: React.FC = () => {
     showToast(isFavorite ? 'Removed from quick log' : 'Added to quick log ⭐');
   };
   const quickLog = (name: string) => {
+    // Waste must carry a reason: open the form with the item pre-selected so
+    // the existing reason chips show first. Output and restock stay one-tap.
+    if (logType === 'waste') {
+      setSelectedName(name);
+      setQty(1);
+      showToast('Choose a waste reason to log it');
+      return;
+    }
     const item = candidates.find((c) => c.name === name);
     if (!item) return;
     const built = buildLogEntry(state, logType, name, 1, item.icon);
@@ -281,6 +298,22 @@ export const ManagePage: React.FC = () => {
           </button>
         )}
 
+        {/* No-recipe notice: producing this food won't deduct any stock */}
+        {missingRecipeNotice && (
+          <div
+            role="status"
+            className="mb-3 p-3 rounded-[var(--radius-sm)] bg-[var(--warning-bg)] border border-[var(--warning)] text-xs text-[var(--text-main)]"
+          >
+            <strong>No recipe set.</strong> Stock won’t be deducted for this entry.{' '}
+            <button
+              onClick={() => setCurrentPage('profile')}
+              className="font-semibold text-[var(--primary)] underline"
+            >
+              Add a recipe in Profile →
+            </button>
+          </div>
+        )}
+
         {/* Waste reason selector */}
         {logType === 'waste' && (
           <div className="mb-3">
@@ -393,7 +426,7 @@ export const ManagePage: React.FC = () => {
                 showToast('Nothing to export yet');
                 return;
               }
-              downloadFile(`production-log-${new Date().toISOString().slice(0, 10)}.csv`, logToCsv(state.dailyLog));
+              downloadFile(`production-log-${dayKey(Date.now())}.csv`, logToCsv(state.dailyLog));
               showToast('Log exported as CSV');
             }}
             aria-label="Export full log as CSV"

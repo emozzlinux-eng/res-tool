@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, createContext, useContext } from 'react';
 import { AppState, Page } from '../types';
 import { loadState, saveState } from '../utils/storage';
+import { formatTimeAgo } from '../utils/format';
 
 interface AppContextType {
   state: AppState;
@@ -44,6 +45,8 @@ export const useAppState = () => {
   const [toast, setToast] = useState({ msg: '', visible: false });
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const savedOnce = useRef(false);
+  // Timestamp of the last successful write to localStorage (for "Saved locally · …")
+  const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
 
   useMobileViewportHeight();
 
@@ -55,7 +58,9 @@ export const useAppState = () => {
       return;
     }
     const ok = saveState(state);
-    if (!ok) {
+    if (ok) {
+      setLastSavedAt(Date.now());
+    } else {
       setToast({ msg: '⚠️ Storage full — recent changes may not be saved. Export a backup!', visible: true });
       if (toastTimer.current) clearTimeout(toastTimer.current);
       toastTimer.current = setTimeout(() => setToast((t) => ({ ...t, visible: false })), 5000);
@@ -110,5 +115,6 @@ export const useAppState = () => {
     isOnline,
     currentPage,
     setCurrentPage,
+    lastSavedLabel: lastSavedAt ? formatTimeAgo(lastSavedAt) : undefined,
   };
 };
