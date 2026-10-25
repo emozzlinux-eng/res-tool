@@ -44,8 +44,8 @@ export const applyStockChanges = (
 
 /**
  * Build the stock changes for a single log entry, based on its type:
- * - output: deduct recipe ingredients (food production)
- * - waste: deduct one unit's worth of the recipe, or the raw item itself
+ * - output: deduct recipe ingredients (production of a FOOD)
+ * - waste: reduce a RAW ITEM's stock directly (waste is logged on raw items only)
  * - restock: add stock to a raw item
  */
 export const changesForEntry = (
@@ -62,12 +62,7 @@ export const changesForEntry = (
     const recipe = state.recipes.find((r) => r.foodName === name);
     return recipeDeductions(recipe, qty);
   }
-  // waste
-  const recipe = state.recipes.find((r) => r.foodName === name);
-  if (recipe) {
-    // Waste of a finished food deducts one unit of the food's ingredients per wasted unit
-    return recipeDeductions(recipe, qty);
-  }
+  // waste — raw items only: reduces that item's stock directly
   return [{ itemName: name, delta: -qty }];
 };
 

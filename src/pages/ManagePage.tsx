@@ -16,17 +16,29 @@ import { exportMonthReport, monthsWithData } from '../utils/report';
 
 type LogType = DailyLogEntry['type'];
 
-const typeMeta: Record<LogType, { label: string; icon: string; verb: string }> = {
-  output: { label: 'Produced', icon: '🟢', verb: 'baked / produced' },
-  waste: { label: 'Waste', icon: '🔴', verb: 'threw away' },
-  restock: { label: 'Restock', icon: '🔵', verb: 'added to shelf' },
+const typeMeta: Record<LogType, { label: string; icon: string; hint: string }> = {
+  output: { label: 'Produced', icon: '✅', hint: 'Finished foods — recipe ingredients are deducted automatically' },
+  waste: { label: 'Waste', icon: '🗑️', hint: 'Raw items thrown away — choose why it was wasted' },
+  restock: { label: 'Restock', icon: '📦', hint: 'Raw items received — added straight to stock' },
 };
+
+/** Waste reason options for the remark selector. */
+const WASTE_REASONS: { value: string; label: string }[] = [
+  { value: 'expired', label: '⏰ Expired' },
+  { value: 'burnt', label: '🔥 Burnt' },
+  { value: 'spoiled', label: '🦠 Spoiled' },
+  { value: 'overproduced', label: '📈 Overproduced' },
+  { value: 'damaged', label: '💥 Damaged' },
+  { value: 'other', label: '✏️ Other (type below)' },
+];
 
 export const ManagePage: React.FC = () => {
   const { state, setState, showToast, setCurrentPage } = useApp();
   const [logType, setLogType] = useState<LogType>('output');
   const [selectedName, setSelectedName] = useState('');
   const [qty, setQty] = useState(1);
+  const [reason, setReason] = useState('');
+  const [reasonNote, setReasonNote] = useState('');
 
   // Month-end Excel report picker
   const monthOptions = useMemo(() => {
@@ -39,15 +51,13 @@ export const ManagePage: React.FC = () => {
   }, [state]);
   const [reportMonthKey, setReportMonthKey] = useState(`${monthOptions[0].year}-${monthOptions[0].month}`);
 
-  // Candidate items depend on the log type
+  // Candidate items depend on the log type:
+  // Produced → FOODS only; Waste & Restock → RAW ITEMS only.
   const candidates = useMemo(() => {
-    if (logType === 'restock') {
-      return state.rawItems.map((i) => ({ name: i.name, icon: i.icon, unit: i.unit }));
+    if (logType === 'output') {
+      return state.foods.map((f) => ({ name: f.name, icon: f.icon, unit: 'pcs' }));
     }
-    // output & waste operate on finished foods; also allow wasting raw items
-    const foods = state.foods.map((f) => ({ name: f.name, icon: f.icon, unit: 'pcs' }));
-    const raws = state.rawItems.map((i) => ({ name: i.name, icon: i.icon, unit: i.unit }));
-    return [...foods, ...raws];
+    return state.rawItems.map((i) => ({ name: i.name, icon: i.icon, unit: i.unit }));
   }, [state.foods, state.rawItems, logType]);
 
   // Reset selection when switching type
@@ -55,9 +65,14 @@ export const ManagePage: React.FC = () => {
     setLogType(t);
     setSelectedName('');
     setQty(1);
+    setReason('');
+    setReasonNote('');
   };
 
   const selectedItem = candidates.find((c) => c.name === selectedName);
+
+  /** Final reason text stored on the entry (waste only). */
+  const resolvedReason = reason === 'other' ? (reasonNote.trim() || 'Other') : reason || undefined;
 
   // Preview stock impact + shortage warnings
   const preview: StockChange[] = useMemo(() => {
@@ -129,6 +144,10 @@ export const ManagePage: React.FC = () => {
       showToast('Quantity must be more than zero');
       return;
     }
+    if (logType === 'waste' && !resolvedReason) {
+      showToast('Please choose a waste reason');
+      return;
+    }
     const entry: DailyLogEntry = {
       id: generateId(),
       type: logType,
@@ -137,6 +156,7 @@ export const ManagePage: React.FC = () => {
       qty: String(qty),
       time: getCurrentTime(),
       timestamp: Date.now(),
+      reason: logType === 'waste' ? resolvedReason : undefined,
       stockChanges: preview,
     };
     setState((prev) => ({
@@ -144,13 +164,19 @@ export const ManagePage: React.FC = () => {
       dailyLog: [entry, ...prev.dailyLog],
       rawItems: applyStockChanges(prev.rawItems, preview),
       activityLog: [
-        { action: `${typeMeta[logType].icon} ${logType}: ${qty} ${selectedItem.name}`, time: Date.now() },
+        {
+          action: `${typeMeta[logType].icon} ${logType}: ${qty} ${selectedItem.name}`,
+          time: Date.now(),
+          reason: logType === 'waste' ? resolvedReason : undefined,
+        },
         ...prev.activityLog.slice(0, 49),
       ],
     }));
     showToast(`Logged ${qty} ${selectedItem.name} (${typeMeta[logType].label})`);
     setSelectedName('');
     setQty(1);
+    setReason('');
+    setReasonNote('');
   };
 
   const handleUndo = (entry: DailyLogEntry) => {
@@ -170,25 +196,37 @@ export const ManagePage: React.FC = () => {
     <div className="page-content">
       {/* Segment control */}
       <div
-        className="flex gap-2 mb-4 p-1 bg-[var(--surface-2)] rounded-[var(--radius)] border border-[var(--border)]"
+        className="flex gap-2 mb-4"
         role="tablist"
         aria-label="Log type"
       >
-        {(Object.keys(typeMeta) as LogType[]).map((t) => (
-          <button
-            key={t}
-            role="tab"
-            aria-selected={logType === t}
-            onClick={() => switchType(t)}
-            className={`flex-1 h-10 rounded-[6px] text-sm font-medium transition-colors ${
-              logType === t
-                ? 'bg-[var(--primary)] text-white shadow'
-                : 'text-[var(--text-sub)] active:bg-[var(--surface)]'
-            }`}
-          >
-            {typeMeta[t].icon} {typeMeta[t].label}
-          </button>
-        ))}
+        {(Object.keys(typeMeta) as LogType[]).map((t) => {
+          const activeTab = logType === t;
+          const tone =
+            t === 'output'
+              ? { bg: 'var(--success)', soft: 'var(--success-bg)' }
+              : t === 'waste'
+                ? { bg: 'var(--danger)', soft: 'var(--danger-bg)' }
+                : { bg: 'var(--primary)', soft: 'var(--primary-light)' };
+          return (
+            <button
+              key={t}
+              role="tab"
+              aria-selected={activeTab}
+              onClick={() => switchType(t)}
+              className={`flex-1 h-[72px] rounded-[var(--radius)] border-2 flex flex-col items-center justify-center gap-1 text-sm font-semibold transition-all active:scale-[0.97] ${
+                activeTab ? 'shadow text-white' : 'text-[var(--text-sub)] bg-[var(--surface)]'
+              }`}
+              style={{
+                borderColor: activeTab ? tone.bg : 'var(--border)',
+                background: activeTab ? tone.bg : undefined,
+              }}
+            >
+              <span className="text-xl leading-none">{typeMeta[t].icon}</span>
+              {typeMeta[t].label}
+            </button>
+          );
+        })}
       </div>
 
       {/* Quick-log favorites */}
@@ -212,7 +250,8 @@ export const ManagePage: React.FC = () => {
 
       {/* Input form */}
       <Card className="mb-4">
-        <h3 className="card__title">{typeMeta[logType].label}</h3>
+        <h3 className="card__title">{typeMeta[logType].icon} {typeMeta[logType].label}</h3>
+        <p className="text-xs text-[var(--text-muted)] -mt-1 mb-3">{typeMeta[logType].hint}</p>
 
         {candidates.length === 0 ? (
           <div className="py-6 text-center">
@@ -234,7 +273,9 @@ export const ManagePage: React.FC = () => {
           aria-label="Choose item"
           className="w-full h-[52px] rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface-2)] px-3 text-[var(--text-main)] mb-3"
         >
-          <option value="">Choose a {logType === 'restock' ? 'raw item…' : 'food or item…'}</option>
+          <option value="">
+            Choose a {logType === 'output' ? 'food…' : 'raw item…'}
+          </option>
           {candidates.map((c) => (
             <option key={`${logType}-${c.name}`} value={c.name}>
               {c.icon} {c.name} ({c.unit})
@@ -256,20 +297,39 @@ export const ManagePage: React.FC = () => {
           </button>
         )}
 
-        {/* Logic guide */}
-        <div className="p-3 rounded-[var(--radius-sm)] bg-[var(--surface-2)] border border-[var(--border)] text-xs text-[var(--text-sub)] mb-3">
-          {logType === 'output' &&
-            (selectedItem && state.recipes.some((r) => r.foodName === selectedItem.name)
-              ? `Recipe will auto-deduct ingredients for ${qty} × ${selectedItem.name}.`
-              : selectedItem
-                ? 'No recipe found — this will deduct the raw item directly.'
-                : 'Producing a food deducts its recipe ingredients from stock.')}
-          {logType === 'waste' &&
-            (selectedItem && state.recipes.some((r) => r.foodName === selectedItem.name)
-              ? 'Wasting a food deducts its ingredient cost from stock.'
-              : 'Wasting a raw item reduces its stock directly.')}
-          {logType === 'restock' && 'Restocking adds quantity to the item’s current stock.'}
-        </div>
+        {/* Waste reason selector */}
+        {logType === 'waste' && (
+          <div className="mb-3">
+            <p className="text-xs font-semibold text-[var(--text-sub)] mb-2">Why was it wasted? (required)</p>
+            <div className="flex flex-wrap gap-2">
+              {WASTE_REASONS.map((r) => (
+                <button
+                  key={r.value}
+                  onClick={() => setReason(reason === r.value ? '' : r.value)}
+                  aria-pressed={reason === r.value}
+                  className={`px-3 py-2 rounded-full border text-xs font-medium transition-colors active:scale-95 ${
+                    reason === r.value
+                      ? 'bg-[var(--danger)] text-white border-[var(--danger)]'
+                      : 'bg-[var(--surface-2)] text-[var(--text-sub)] border-[var(--border)]'
+                  }`}
+                >
+                  {r.label}
+                </button>
+              ))}
+            </div>
+            {reason === 'other' && (
+              <input
+                autoFocus
+                value={reasonNote}
+                onChange={(e) => setReasonNote(e.target.value)}
+                maxLength={60}
+                placeholder="Describe the reason…"
+                aria-label="Waste reason details"
+                className="mt-2 w-full h-11 rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface-2)] px-3 text-sm text-[var(--text-main)]"
+              />
+            )}
+          </div>
+        )}
 
         {/* Quantity stepper */}
         <div className="flex items-center justify-center gap-4 my-6">
@@ -326,8 +386,14 @@ export const ManagePage: React.FC = () => {
           </div>
         )}
 
-        <Button fullWidth onClick={handleSave} disabled={!selectedItem || qty <= 0}>
-          Save {typeMeta[logType].label.toLowerCase()} entry
+        <Button
+          fullWidth
+          onClick={handleSave}
+          disabled={!selectedItem || qty <= 0 || (logType === 'waste' && !resolvedReason)}
+        >
+          {logType === 'output' && '✅ Save production'}
+          {logType === 'waste' && '🗑️ Save waste entry'}
+          {logType === 'restock' && '📦 Save restock'}
         </Button>
           </>
         )}
@@ -369,8 +435,13 @@ export const ManagePage: React.FC = () => {
                   <div className="text-sm font-medium text-[var(--text-main)] truncate">
                     {entry.name}
                   </div>
-                  <div className="text-xs text-[var(--text-muted)]">
+                  <div className="text-xs text-[var(--text-muted)] truncate">
                     {typeMeta[entry.type].label} · {entry.time}
+                    {entry.reason && (
+                      <span className="ml-1 px-1.5 py-0.5 rounded bg-[var(--danger-bg)] text-[var(--danger)] font-medium capitalize">
+                        {entry.reason}
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div className="text-sm font-semibold text-[var(--text-main)]">

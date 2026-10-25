@@ -10,6 +10,16 @@ import {
 } from '../utils/inventory';
 import { formatTimeAgo, getFormattedDate, getGreeting } from '../utils/helpers';
 
+/** Friendly labels for waste reasons recorded on the Manage page. */
+const reasonLabels: Record<string, string> = {
+  expired: 'Expired',
+  burnt: 'Burnt',
+  spoiled: 'Spoiled',
+  overproduced: 'Overproduced',
+  damaged: 'Damaged',
+  other: 'Other',
+};
+
 export const HomePage: React.FC = () => {
   const { state, setCurrentPage } = useApp();
 
@@ -18,7 +28,6 @@ export const HomePage: React.FC = () => {
   const restockCount = todaysEntries(state.dailyLog).filter((e) => e.type === 'restock').length;
   const shortages = useMemo(() => findShortages(state.rawItems), [state.rawItems]);
   const wasteValue = wasteValueToday(state);
-  const pendingList = (state.shoppingList ?? []).filter((i) => !i.done).length;
   const recent = state.activityLog.slice(0, 6);
 
   const stats = [
@@ -88,26 +97,13 @@ export const HomePage: React.FC = () => {
         ))}
       </div>
 
-      {/* Quick actions */}
-      <div className="grid grid-cols-2 gap-3 mb-4">
-        <button
-          onClick={() => setCurrentPage('manage')}
-          className="flex items-center gap-2 p-3 rounded-[var(--radius)] bg-[var(--primary)] border border-[var(--primary)] text-sm font-semibold text-white active:scale-[0.98] transition-transform text-left shadow"
-        >
-          ➕ Quick log
-        </button>
-        <button
-          onClick={() => setCurrentPage('shopping')}
-          className="flex items-center justify-between gap-2 p-3 rounded-[var(--radius)] bg-[var(--surface)] border border-[var(--border)] text-sm font-medium text-[var(--text-main)] active:scale-[0.98] transition-transform text-left"
-        >
-          <span>🛒 Shopping list</span>
-          {pendingList > 0 && (
-            <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-[var(--primary)] text-white text-xs font-semibold flex items-center justify-center">
-              {pendingList}
-            </span>
-          )}
-        </button>
-      </div>
+      {/* Quick action — single primary CTA */}
+      <button
+        onClick={() => setCurrentPage('manage')}
+        className="w-full flex items-center justify-center gap-2 h-12 mb-4 rounded-[var(--radius)] bg-[var(--primary)] border border-[var(--primary)] text-sm font-semibold text-white active:scale-[0.98] transition-transform shadow"
+      >
+        ➕ Quick log an entry
+      </button>
 
       {/* Waste value banner */}
       {wasteValue > 0 && (
@@ -179,7 +175,14 @@ export const HomePage: React.FC = () => {
                 <div className="w-2 h-2 rounded-full bg-[var(--primary)] flex-shrink-0" />
                 <div className="flex-1 min-w-0">
                   <div className="text-sm text-[var(--text-main)] truncate">{a.action}</div>
-                  <div className="text-xs text-[var(--text-muted)]">{formatTimeAgo(a.time)}</div>
+                  <div className="text-xs text-[var(--text-muted)]">
+                    {formatTimeAgo(a.time)}
+                    {a.reason && (
+                      <span className="ml-2 px-1.5 py-0.5 rounded bg-[var(--danger-bg)] text-[var(--danger)] font-medium">
+                        {reasonLabels[a.reason] ?? a.reason}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
             ))}

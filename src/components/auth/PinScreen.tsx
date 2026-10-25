@@ -9,7 +9,7 @@ import {
   shuffle,
 } from '../../utils/helpers';
 
-type PinMode = 'setup' | 'confirm' | 'verify' | 'change-old' | 'change-new' | 'change-confirm';
+type PinMode = 'verify' | 'change-old' | 'change-new' | 'change-confirm';
 
 interface PinScreenProps {
   mode: PinMode;
@@ -24,8 +24,6 @@ interface PinScreenProps {
 }
 
 const titles: Record<PinMode, string> = {
-  'setup': 'Create Your PIN',
-  'confirm': 'Confirm Your PIN',
   'verify': 'Welcome back',
   'change-old': 'Enter Current PIN',
   'change-new': 'Create New PIN',
@@ -33,8 +31,6 @@ const titles: Record<PinMode, string> = {
 };
 
 const subtitles: Record<PinMode, string> = {
-  'setup': 'Choose a 6-digit PIN to secure your workspace',
-  'confirm': 'Re-enter the same PIN to confirm',
   'verify': 'Enter your PIN to sign in',
   'change-old': 'Verify your identity first',
   'change-new': 'Choose a new 6-digit PIN',
@@ -260,9 +256,11 @@ export const PinScreen: React.FC<PinScreenProps> = ({
 
       {/* Footer note */}
       <p className="login-footer">
-        {isVerify
-          ? 'Your data stays on this device — nothing leaves the browser.'
-          : 'This PIN protects the data stored on this device.'}
+        {!existingHash
+          ? 'Default PIN is 000000 — change it in Profile → Change PIN.'
+          : isVerify
+            ? 'Your data stays on this device — nothing leaves the browser.'
+            : 'This PIN protects the data stored on this device.'}
       </p>
     </div>
   );
