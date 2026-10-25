@@ -7,8 +7,8 @@ interface OnboardingProps {
 }
 
 const slides = [
-  { icon: '🎉', title: 'Welcome to Inventory Pro', features: ['Works 100% offline', '6-digit PIN security', 'Cloud sync ready'] },
-  { icon: '🧮', title: 'Smart Recipe Tracking', features: ['Log 20 Croissants', 'Auto-deducts 4kg flour', 'Auto-deducts 1kg butter'] },
+  { icon: '🎉', title: 'Welcome to Inventory Pro', features: ['Works 100% offline', '6-digit PIN sign-in', 'Data stays on this device'] },
+  { icon: '🧮', title: 'Smart Recipe Tracking', features: ['Log 20 croissants produced', 'Auto-deducts flour per recipe', 'Auto-deducts butter & sugar'] },
   { icon: '📝', title: 'Daily Workflow', features: ['🟢 Output finished goods', '🔴 Log waste & losses', '🔵 Restock ingredients'] },
   { icon: '📲', title: 'Smart Ordering', features: ['Low-stock alerts', 'Auto shopping list', 'WhatsApp integration'] },
   { icon: '🔐', title: "Let's Get Started", features: ['Set up your PIN', 'Secure your data', 'Start managing inventory'] },

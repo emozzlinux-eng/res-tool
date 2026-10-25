@@ -762,45 +762,146 @@ html, body {
 }
 
 /* ============================================================
-   PIN SCREEN
+   LOGIN / PIN SCREEN — professional grade
    ============================================================ */
 
-.pin-screen {
+.login-screen {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
   height: 100%;
-  padding: 24px;
-  background: var(--bg);
+  padding: 32px 24px calc(24px + env(safe-area-inset-bottom, 0));
+  background:
+    radial-gradient(120% 60% at 50% 0%, var(--primary-light) 0%, transparent 60%),
+    var(--bg);
+  outline: none;
+  overflow-y: auto;
+}
+
+.login-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  max-width: 300px;
+  margin-bottom: 40px;
+}
+
+.login-brand__logo {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%);
+  box-shadow: var(--shadow-md);
+  flex-shrink: 0;
+}
+
+.login-brand__name {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text-main);
+  line-height: 1.2;
+}
+
+.login-brand__tag {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-sub);
+  letter-spacing: 0.01em;
+}
+
+.login-heading {
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.login-heading__title {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text-main);
+  margin-bottom: 6px;
+}
+
+.login-heading__sub {
+  font-size: 13px;
+  color: var(--text-sub);
+  max-width: 260px;
+  margin: 0 auto;
+  line-height: 1.45;
+}
+
+.login-msg {
+  font-size: 12px;
+  min-height: 18px;
+  margin-bottom: 4px;
+  font-weight: 500;
+}
+
+.login-msg--error { color: var(--danger); }
+.login-msg--warn  { color: var(--warning); }
+.login-msg--ghost { color: transparent; }
+
+.login-footer {
+  margin-top: 28px;
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: center;
+  max-width: 260px;
+  line-height: 1.5;
 }
 
 .pin-dots {
   display: flex;
-  gap: 14px;
+  gap: 16px;
   justify-content: center;
 }
 
+.pin-dots--busy .pin-dot {
+  animation: dotPulse 0.8s ease infinite;
+}
+
+@keyframes dotPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
 .pin-dot {
-  width: 14px;
-  height: 14px;
+  width: 13px;
+  height: 13px;
   border-radius: 50%;
-  border: 2px solid var(--border);
+  border: 2px solid var(--border-strong);
+  background: transparent;
   transition: var(--transition);
 }
 
 .pin-dot--filled {
   background: var(--primary);
   border-color: var(--primary);
-  transform: scale(1.1);
+  transform: scale(1.15);
+}
+
+.pin-dot--error {
+  border-color: var(--danger);
+  animation: shake 0.35s ease;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-5px); }
+  75% { transform: translateX(5px); }
 }
 
 .pin-pad {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
-  max-width: 280px;
-  margin: 32px auto 0;
+  grid-template-columns: repeat(3, 88px);
+  gap: 14px;
+  justify-content: center;
+  margin-top: 28px;
 }
 
 .pin-key {
@@ -810,21 +911,54 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 28px;
-  font-weight: 400;
+  font-size: 26px;
+  font-weight: 500;
   cursor: pointer;
   transition: var(--transition);
-  border: none;
+  border: 1px solid var(--border);
   background: var(--surface);
   color: var(--text-main);
   margin: 0 auto;
-  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  font-family: inherit;
 }
 
-.pin-key:active {
+.pin-key:hover:not(:disabled) {
+  border-color: var(--primary);
+}
+
+.pin-key:active:not(:disabled) {
   background: var(--primary-light);
   transform: scale(0.92);
   border-color: var(--primary);
+}
+
+.pin-key:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.pin-key--action {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  color: var(--text-sub);
+}
+
+.pin-key--action:hover:not(:disabled) {
+  border-color: transparent;
+  color: var(--primary);
+}
+
+.pin-key--action:active:not(:disabled) {
+  background: transparent;
+  transform: scale(0.9);
+  border-color: transparent;
+}
+
+.pin-key--spacer {
+  pointer-events: none;
+  visibility: hidden;
 }
 
 /* ============================================================
@@ -926,3 +1060,91 @@ html, body {
     display: none !important;
   }
 }
+
+/* ---------- v4.2: sheets, chips, privacy blur, panic UI ---------- */
+
+.sheet-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  animation: fadeIn 0.18s ease;
+}
+.sheet-panel {
+  width: 100%;
+  max-width: 414px;
+  max-height: 82vh;
+  overflow-y: auto;
+  background: var(--surface);
+  border-radius: 20px 20px 0 0;
+  padding: 8px 16px calc(20px + env(safe-area-inset-bottom));
+  animation: sheetUp 0.22s cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+@media (min-width: 640px) {
+  .sheet-overlay { align-items: center; }
+  .sheet-panel { border-radius: 20px; padding-bottom: 20px; }
+}
+.sheet-handle {
+  width: 40px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--border-strong);
+  margin: 4px auto 12px;
+}
+@keyframes sheetUp {
+  from { transform: translateY(40px); opacity: 0.6; }
+  to { transform: translateY(0); opacity: 1; }
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Quick-log chips */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-main);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: transform 0.1s ease;
+}
+.chip:active { transform: scale(0.95); }
+.chip__plus {
+  font-weight: 700;
+  color: var(--primary);
+  background: var(--primary-light);
+  border-radius: 999px;
+  padding: 1px 7px;
+  font-size: 11px;
+}
+.ql-row::-webkit-scrollbar { display: none; }
+.ql-row { scrollbar-width: none; }
+
+/* Privacy: lock-on-hide blur + panic area on login */
+.page-stage--blurrable.privacy-hidden {
+  filter: blur(14px);
+  pointer-events: none;
+  user-select: none;
+}
+.login-panic {
+  margin: 0 24px 12px;
+  padding: 12px;
+  border-radius: var(--radius);
+  background: var(--danger-bg);
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  text-align: center;
+}
+
+/* Larger tap targets for settings rows */
+.settings-item { min-height: 60px; }

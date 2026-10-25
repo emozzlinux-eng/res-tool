@@ -75,34 +75,28 @@ export interface AppState {
   darkMode: boolean;
   autoLockMinutes: number;
   userName: string;
+  /** Security options (all default off/standard). */
+  scrambleKeypad: boolean;
+  privacyBlur: boolean;
+  panicWipeEnabled: boolean;
+  /** Shop currency symbol used across the app (e.g. ₦, $, ₹, £). */
+  currency: string;
+  /** Items marked as favorites get quick-log chips on the Manage page. */
+  favorites: string[];
 }
 
 export type Page = 'home' | 'manage' | 'restock' | 'shopping' | 'profile';
 
+/**
+ * Fresh-start state — intentionally contains NO demo/sample data.
+ * A new install begins with empty lists; the user adds their own
+ * foods, ingredients, recipes and suppliers from the Profile page.
+ */
 export const DEFAULT_STATE: AppState = {
-  foods: [
-    { name: 'Croissant', icon: '🥐', category: 'Pastries' },
-    { name: 'Baguette', icon: '🥖', category: 'Breads' },
-    { name: 'Chocolate Cake', icon: '🍰', category: 'Cakes' },
-    { name: 'Muffin', icon: '🧁', category: 'Pastries' },
-  ],
-  rawItems: [
-    { name: 'All-Purpose Flour', icon: '🌾', unit: 'kg', parLevel: 20, currentStock: 45, costPerUnit: 1.2 },
-    { name: 'Unsalted Butter', icon: '🧈', unit: 'kg', parLevel: 10, currentStock: 5, costPerUnit: 8.5 },
-    { name: 'Sugar', icon: '🍬', unit: 'kg', parLevel: 15, currentStock: 18, costPerUnit: 0.9 },
-    { name: 'Vanilla Extract', icon: '🧪', unit: 'btl', parLevel: 3, currentStock: 0, costPerUnit: 6 },
-    { name: 'Active Dry Yeast', icon: '🫧', unit: 'pkg', parLevel: 10, currentStock: 12, costPerUnit: 1.5 },
-  ],
-  recipes: [
-    { foodName: 'Croissant', ingredients: [{ itemName: 'All-Purpose Flour', qty: 0.2 }, { itemName: 'Unsalted Butter', qty: 0.05 }, { itemName: 'Sugar', qty: 0.02 }] },
-    { foodName: 'Baguette', ingredients: [{ itemName: 'All-Purpose Flour', qty: 0.3 }, { itemName: 'Active Dry Yeast', qty: 0.01 }] },
-    { foodName: 'Chocolate Cake', ingredients: [{ itemName: 'All-Purpose Flour', qty: 0.25 }, { itemName: 'Unsalted Butter', qty: 0.15 }, { itemName: 'Sugar', qty: 0.2 }] },
-    { foodName: 'Muffin', ingredients: [{ itemName: 'All-Purpose Flour', qty: 0.08 }, { itemName: 'Sugar', qty: 0.05 }, { itemName: 'Unsalted Butter', qty: 0.03 }] },
-  ],
-  suppliers: [
-    { name: 'Bakery Supplies Co.', phone: '15551234567', items: ['All-Purpose Flour', 'Unsalted Butter', 'Sugar'] },
-    { name: 'Spice World', phone: '15559876543', items: ['Vanilla Extract', 'Active Dry Yeast'] },
-  ],
+  foods: [],
+  rawItems: [],
+  recipes: [],
+  suppliers: [],
   dailyLog: [],
   activityLog: [],
   shoppingList: [],
@@ -111,4 +105,9 @@ export const DEFAULT_STATE: AppState = {
   darkMode: false,
   autoLockMinutes: 5,
   userName: 'Manager',
+  scrambleKeypad: false,
+  privacyBlur: false,
+  panicWipeEnabled: false,
+  currency: '$',
+  favorites: [],
 };
