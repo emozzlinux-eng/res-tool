@@ -5,6 +5,8 @@ import { Sheet } from '../ui/Sheet';
 
 interface OnboardingProps {
   onComplete: () => void;
+  /** Optional "Try a demo" path — loads the sample preset and finishes onboarding. */
+  onLoadDemo?: () => void;
 }
 
 const slides = [
@@ -15,9 +17,10 @@ const slides = [
   { icon: '🔐', title: "Let's Get Started", features: ['Set up your PIN', 'Secure your data', 'Start managing inventory'] },
 ];
 
-export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
+export const Onboarding: React.FC<OnboardingProps> = ({ onComplete, onLoadDemo }) => {
   const [slide, setSlide] = useState(0);
   const [showSkipConfirm, setShowSkipConfirm] = useState(false);
+  const [showDemoConfirm, setShowDemoConfirm] = useState(false);
   const current = slides[slide];
 
   return (
@@ -48,17 +51,38 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
       </div>
 
       {/* Navigation */}
-      <div className="p-6 flex gap-3">
-        {slide > 0 && (
-          <Button variant="outline" fullWidth onClick={() => setSlide(s => s - 1)}>Back</Button>
+      <div className="p-6 flex flex-col gap-3">
+        <div className="flex gap-3">
+          {slide > 0 && (
+            <Button variant="outline" fullWidth onClick={() => setSlide(s => s - 1)}>Back</Button>
+          )}
+          <Button variant="primary" fullWidth onClick={() => {
+            if (slide < slides.length - 1) setSlide(s => s + 1);
+            else onComplete();
+          }}>
+            {slide === slides.length - 1 ? 'Get Started' : 'Next'}
+          </Button>
+        </div>
+        {onLoadDemo && slide === slides.length - 1 && (
+          <Button variant="outline" fullWidth onClick={() => setShowDemoConfirm(true)}>
+            Try a demo with sample data
+          </Button>
         )}
-        <Button variant="primary" fullWidth onClick={() => {
-          if (slide < slides.length - 1) setSlide(s => s + 1);
-          else onComplete();
-        }}>
-          {slide === slides.length - 1 ? 'Get Started' : 'Next'}
-        </Button>
       </div>
+
+      {/* Demo Confirmation — Sheet is the app's only modal */}
+      {showDemoConfirm && (
+        <Sheet title="Load Sample Data?" onClose={() => setShowDemoConfirm(false)} variant="center">
+          <p className="text-sm mb-4 text-[var(--text-sub)]">
+            We&apos;ll fill in example foods, ingredients, recipes and suppliers so you can explore right away.
+            You can clear it later with Reset All Data in Profile.
+          </p>
+          <div className="flex gap-3">
+            <Button variant="outline" fullWidth onClick={() => setShowDemoConfirm(false)}>Cancel</Button>
+            <Button variant="primary" fullWidth onClick={onLoadDemo}>Load Demo</Button>
+          </div>
+        </Sheet>
+      )}
 
       {/* Skip Confirmation — Sheet is the app's only modal */}
       {showSkipConfirm && (

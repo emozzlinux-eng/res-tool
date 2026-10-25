@@ -25,6 +25,17 @@ export default defineConfig({
       },
     }),
   ],
+  build: {
+    // Production hardening: drop console/debugger statements and minify
+    // aggressively so no debug output or internal names ship to devices.
+    minify: "esbuild",
+    esbuild: {
+      pure: ["console.log", "console.debug", "console.info"],
+      drop: ["debugger"],
+    },
+    sourcemap: false,
+    target: "es2020",
+  },
   server: {
     // Exposed on the LAN so you can open the dev server from a phone; drop
     // this (or set host: false) if you only develop on localhost.

@@ -7,7 +7,7 @@ import { ToggleSwitch } from '../components/ui/ToggleSwitch';
 import { useApp } from '../hooks/useAppState';
 import { Food, RawItem, Recipe, Supplier } from '../types';
 import { DEFAULT_STATE } from '../types';
-import { clearState, normalizeState, persistPanicWipeEnabled } from '../utils/storage';
+import { clearState, normalizeState, persistPanicWipeEnabled, wrapBackup, unwrapBackup } from '../utils/storage';
 import { sanitize } from '../utils/helpers';
 import { recipeCost } from '../utils/inventory';
 import { downloadFile, logToCsv } from '../utils/export';
@@ -46,9 +46,11 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ onOpenChangePin }) => 
 
   // ---------- Backup / Restore / Reset ----------
   const handleBackup = () => {
+    // Versioned envelope (app id + schemaVersion) so future releases can
+    // migrate old files instead of guessing, and foreign JSON is rejected.
     downloadFile(
       `inventory-pro-backup-${dayKey(Date.now())}.json`,
-      JSON.stringify(state, null, 2),
+      JSON.stringify(wrapBackup(state), null, 2),
       'application/json'
     );
     showToast('Backup downloaded');
@@ -64,14 +66,22 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ onOpenChangePin }) => 
   };
 
   const handleRestoreFile = (file: File) => {
+    // Guard against multi-GB "backups": reading them into memory would hang
+    // or crash the tab before normalizeState ever runs.
+    if (file.size > 10 * 1024 * 1024) {
+      showToast('File too large to be a valid backup (max 10 MB)');
+      return;
+    }
     const reader = new FileReader();
     reader.onload = () => {
       try {
         const parsed = JSON.parse(String(reader.result)) as unknown;
-        if (!parsed || typeof parsed !== 'object') throw new Error('Invalid file');
+        // Rejects files that clearly aren't ours; passes legacy bare-state
+        // backups through unchanged for backward compatibility.
+        const inner = unwrapBackup(parsed);
         // Repair/validate every field before adopting the backup — a corrupt
         // or foreign JSON file can never poison the running app state.
-        const restored = normalizeState(parsed);
+        const restored = normalizeState(inner);
         setState({ ...DEFAULT_STATE, ...restored });
         showToast('Backup restored');
       } catch {

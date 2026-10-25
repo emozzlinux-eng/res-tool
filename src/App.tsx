@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } from 'react';
 import { AppContext, useAppState } from './hooks/useAppState';
 import { hashPin, isLegacyPinHash } from './utils/pin';
 import { TopHeader } from './components/layout/TopHeader';
@@ -6,12 +6,15 @@ import { UpdateBanner } from './components/layout/UpdateBanner';
 import { BottomNav } from './components/layout/BottomNav';
 import { Toast } from './components/ui/Toast';
 import { PinScreen } from './components/auth/PinScreen';
-import { Onboarding } from './components/auth/Onboarding';
-import { HomePage } from './pages/HomePage';
-import { ManagePage } from './pages/ManagePage';
-import { RestockPage } from './pages/RestockPage';
-import { ProfilePage } from './pages/ProfilePage';
-import { Page, DEFAULT_PIN } from './types';
+// The three main tabs are code-split so the initial download only contains
+// the shell + PIN/onboarding screens. Each chunk is small and gets cached by
+// the service worker after first visit; navigation then feels instant.
+const Onboarding = lazy(() => import('./components/auth/Onboarding').then(m => ({ default: m.Onboarding })));
+const HomePage = lazy(() => import('./pages/HomePage').then(m => ({ default: m.HomePage })));
+const ManagePage = lazy(() => import('./pages/ManagePage').then(m => ({ default: m.ManagePage })));
+const RestockPage = lazy(() => import('./pages/RestockPage').then(m => ({ default: m.RestockPage })));
+const ProfilePage = lazy(() => import('./pages/ProfilePage').then(m => ({ default: m.ProfilePage })));
+import { Page, DEFAULT_PIN, DEMO_STATE } from './types';
 
 const pageTitles: Record<Page, string> = {
   home: 'Dashboard',
@@ -19,6 +22,13 @@ const pageTitles: Record<Page, string> = {
   restock: 'Inventory',
   profile: 'Profile',
 };
+
+/** Minimal placeholder shown while a lazily-loaded tab chunk arrives. */
+const PageFallback = () => (
+  <div className="page-content" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }} role="status" aria-label="Loading">
+    <span style={{ opacity: 0.5, fontSize: 14 }}>Loading…</span>
+  </div>
+);
 
 const App = () => {
   const {
@@ -127,6 +137,15 @@ const App = () => {
     showToast('Welcome! Default PIN is 000000 — change it in Profile.');
   };
 
+  const handleLoadDemo = async () => {
+    // Onboarding "Try a demo" path: seed the sample preset, then finish setup.
+    // Spread order matters: DEMO_STATE first so pin/onboardingSeen below win.
+    updateState({ ...DEMO_STATE, pin: await hashPin(DEFAULT_PIN), onboardingSeen: true });
+    setShowOnboarding(false);
+    setIsLocked(false);
+    showToast('Demo data loaded! Default PIN is 000000 — reset it anytime from Profile.');
+  };
+
   const handlePinVerify = async (pin: string) => {
     // Never unlock on an empty/missing PIN hash — the caller (PinScreen)
     // always verifies against state.pin before calling this.
@@ -192,7 +211,9 @@ const App = () => {
     return (
       <AppContext.Provider value={contextValue}>
         <div className="app-shell">
-          <Onboarding onComplete={handleOnboardingComplete} />
+          <Suspense fallback={<PageFallback />}>
+            <Onboarding onComplete={handleOnboardingComplete} onLoadDemo={handleLoadDemo} />
+          </Suspense>
           <Toast message={toast.msg} visible={toast.visible} />
         </div>
       </AppContext.Provider>
@@ -265,10 +286,12 @@ const App = () => {
 
         {/* Page Content (optionally blurred when the window loses focus — shoulder-surfing protection) */}
         <div className={`page-stage ${state.privacyBlur ? 'page-stage--blurrable' : ''}`}>
-          {currentPage === 'home' && <HomePage />}
-          {currentPage === 'manage' && <ManagePage />}
-          {currentPage === 'restock' && <RestockPage />}
-          {currentPage === 'profile' && <ProfilePage onOpenChangePin={() => setChangingPin(true)} />}
+          <Suspense fallback={<PageFallback />}>
+            {currentPage === 'home' && <HomePage />}
+            {currentPage === 'manage' && <ManagePage />}
+            {currentPage === 'restock' && <RestockPage />}
+            {currentPage === 'profile' && <ProfilePage onOpenChangePin={() => setChangingPin(true)} />}
+          </Suspense>
         </div>
 
         {/* Bottom Navigation */}
