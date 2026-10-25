@@ -1,7 +1,7 @@
 import { AppState, DEFAULT_STATE, SCHEMA_VERSION } from '../types';
 import { migrateState } from './migrate';
 
-const STORAGE_KEY = 'inventoryPro_state';
+export const STORAGE_KEY = 'inventoryPro_state';
 
 /** Backup file envelope — identifies our exports and carries the schema version. */
 export const BACKUP_APP_ID = 'inventory-pro';

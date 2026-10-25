@@ -7,7 +7,8 @@ import { ToggleSwitch } from '../components/ui/ToggleSwitch';
 import { useApp } from '../hooks/useAppState';
 import { Food, RawItem, Recipe, Supplier } from '../types';
 import { DEFAULT_STATE } from '../types';
-import { clearState, normalizeState } from '../utils/storage';
+import { clearState, normalizeState, unwrapBackup, wrapBackup } from '../utils/storage';
+import { enrollBiometric, hasBiometricEnrolled, isBiometricAvailable, removeBiometric } from '../utils/biometric';
 import { sanitize } from '../utils/helpers';
 import { recipeCost } from '../utils/inventory';
 import { downloadFile, logToCsv } from '../utils/export';
@@ -32,6 +33,18 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ onOpenChangePin }) => 
   const [showNameDialog, setShowNameDialog] = useState(false);
   const [showLockDialog, setShowLockDialog] = useState(false);
   const [showResetDialog, setShowResetDialog] = useState(false);
+  // Biometric enrollment state for the Security settings row.
+  const [bioStatus, setBioStatus] = useState<'ready' | 'busy' | 'enrolled' | 'unavailable'>(() =>
+    hasBiometricEnrolled() ? 'enrolled' : 'ready'
+  );
+  React.useEffect(() => {
+    if (hasBiometricEnrolled()) return;
+    let alive = true;
+    isBiometricAvailable().then((ok) => {
+      if (alive && !ok) setBioStatus('unavailable');
+    });
+    return () => { alive = false; };
+  }, []);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const counts = useMemo(
@@ -48,7 +61,9 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ onOpenChangePin }) => 
   const handleBackup = () => {
     downloadFile(
       `inventory-pro-backup-${dayKey(Date.now())}.json`,
-      JSON.stringify(state, null, 2),
+      // Wrap in the versioned envelope so future schema migrations can detect
+      // the file's origin/version instead of guessing from bare state keys.
+      JSON.stringify(wrapBackup(state), null, 2),
       'application/json'
     );
     showToast('Backup downloaded');
@@ -69,9 +84,11 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ onOpenChangePin }) => 
       try {
         const parsed = JSON.parse(String(reader.result)) as unknown;
         if (!parsed || typeof parsed !== 'object') throw new Error('Invalid file');
+        // Accept both the versioned envelope and legacy bare-state backups.
+        const payload = unwrapBackup(parsed);
         // Repair/validate every field before adopting the backup — a corrupt
         // or foreign JSON file can never poison the running app state.
-        const restored = normalizeState(parsed);
+        const restored = normalizeState(payload);
         setState({ ...DEFAULT_STATE, ...restored });
         showToast('Backup restored');
       } catch {
@@ -90,7 +107,13 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ onOpenChangePin }) => 
   };
 
   // ---------- Master data editors ----------
+  // Remember the profile list's scroll offset when entering the editor so we
+  // can restore it on "Back" (the editor swaps the whole page-content node,
+  // which otherwise resets scrolling to the top).
+  const editorScrollRef = useRef(0);
   const openEditor = (kind: Exclude<EditorKind, null>) => {
+    const scroller = document.querySelector<HTMLElement>('.page-content');
+    editorScrollRef.current = scroller?.scrollTop ?? 0;
     setEditor(kind);
     setEditingIndex(null);
   };
@@ -102,6 +125,10 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ onOpenChangePin }) => 
     setRawDraft({ name: '', icon: '📦', unit: 'kg', parLevel: '1', currentStock: '0', costPerUnit: '' });
     setSupplierDraft({ name: '', phone: '', items: '' });
     setRecipeDraft({ foodName: '', lines: [] });
+    requestAnimationFrame(() => {
+      const scroller = document.querySelector<HTMLElement>('.page-content');
+      if (scroller) scroller.scrollTop = editorScrollRef.current;
+    });
   };
 
   // Draft forms
@@ -394,6 +421,8 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ onOpenChangePin }) => 
     return (
       <div className="page-content">
         <div className="flex items-center gap-3 mb-4">
+          {/* Back from the editor: restore the previous scroll position and
+              focus so keyboard/screen-reader users aren't dumped at the top. */}
           <button
             onClick={closeEditor}
             aria-label="Back to profile"
@@ -501,6 +530,36 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ onOpenChangePin }) => 
               <div className="settings-item__desc">Offer “erase all data” after 5 wrong PINs (requires your correct PIN to fire)</div>
             </div>
             <ToggleSwitch checked={state.panicWipeEnabled} onChange={(c) => updateState({ panicWipeEnabled: c })} label="" />
+          </div>
+          {/* Biometric quick-unlock (WebAuthn platform authenticator). */}
+          <div className="settings-item">
+            <div className="settings-item__icon bg-[var(--surface-2)]">🔓</div>
+            <div className="settings-item__content">
+              <div className="settings-item__label">Biometric Unlock</div>
+              <div className="settings-item__desc">
+                {bioStatus === 'enrolled'
+                  ? 'Face / Touch ID is enrolled for this browser.'
+                  : bioStatus === 'unavailable'
+                    ? 'Not supported on this device or browser.'
+                    : 'Use Face ID / Touch ID / Windows Hello to unlock instead of typing your PIN.'}
+              </div>
+            </div>
+            {bioStatus === 'enrolled' ? (
+              <button className="btn btn--ghost btn--sm" onClick={() => { removeBiometric(); setBioStatus('ready'); }}>Remove</button>
+            ) : (
+              <button
+                className="btn btn--sm"
+                disabled={bioStatus === 'busy' || bioStatus === 'unavailable'}
+                onClick={async () => {
+                  setBioStatus('busy');
+                  const ok = await enrollBiometric();
+                  setBioStatus(ok ? 'enrolled' : 'ready');
+                  showToast(ok ? 'Biometric unlock enabled' : 'Could not enroll — try again from the lock screen context');
+                }}
+              >
+                {bioStatus === 'busy' ? 'Enrolling…' : 'Enable'}
+              </button>
+            )}
           </div>
         </div>
       </div>

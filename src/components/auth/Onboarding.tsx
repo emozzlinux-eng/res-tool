@@ -5,6 +5,8 @@ import { Sheet } from '../ui/Sheet';
 
 interface OnboardingProps {
   onComplete: () => void;
+  /** Optional: seed the workspace with sample data instead of an empty one. */
+  onStartDemo?: () => void;
 }
 
 const slides = [
@@ -15,7 +17,7 @@ const slides = [
   { icon: '🔐', title: "Let's Get Started", features: ['Set up your PIN', 'Secure your data', 'Start managing inventory'] },
 ];
 
-export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
+export const Onboarding: React.FC<OnboardingProps> = ({ onComplete, onStartDemo }) => {
   const [slide, setSlide] = useState(0);
   const [showSkipConfirm, setShowSkipConfirm] = useState(false);
   const current = slides[slide];
@@ -33,8 +35,8 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
         <div className="w-10" />
       </div>
 
-      {/* Content */}
-      <div className="flex-1 flex flex-col items-center justify-center px-8">
+      {/* Content (scrollable on short screens so nothing gets clipped) */}
+      <div className="flex-1 min-h-0 overflow-y-auto flex flex-col items-center justify-center px-8 py-6">
         <div className="text-6xl mb-8">{current.icon}</div>
         <h2 className="text-2xl font-semibold mb-6 text-center text-[var(--text-main)]">{current.title}</h2>
         <div className="space-y-3 w-full">
@@ -48,16 +50,24 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
       </div>
 
       {/* Navigation */}
-      <div className="p-6 flex gap-3">
-        {slide > 0 && (
-          <Button variant="outline" fullWidth onClick={() => setSlide(s => s - 1)}>Back</Button>
+      <div className="p-6 space-y-3">
+        <div className="flex gap-3">
+          {slide > 0 && (
+            <Button variant="outline" fullWidth onClick={() => setSlide(s => s - 1)}>Back</Button>
+          )}
+          <Button variant="primary" fullWidth onClick={() => {
+            if (slide < slides.length - 1) setSlide(s => s + 1);
+            else onComplete();
+          }}>
+            {slide === slides.length - 1 ? 'Get Started' : 'Next'}
+          </Button>
+        </div>
+        {/* "Try a demo" was promised by the dead DEMO_STATE dataset — wire it up. */}
+        {slide === slides.length - 1 && onStartDemo && (
+          <Button variant="outline" fullWidth onClick={onStartDemo}>
+            Try a demo with sample data
+          </Button>
         )}
-        <Button variant="primary" fullWidth onClick={() => {
-          if (slide < slides.length - 1) setSlide(s => s + 1);
-          else onComplete();
-        }}>
-          {slide === slides.length - 1 ? 'Get Started' : 'Next'}
-        </Button>
       </div>
 
       {/* Skip Confirmation — Sheet is the app's only modal */}

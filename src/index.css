@@ -715,7 +715,12 @@ html, body {
   z-index: 1000;
   box-shadow: var(--shadow-lg);
   animation: toastSlideUp 0.3s cubic-bezier(0.32, 0.72, 0, 1);
-  white-space: nowrap;
+  /* Long messages ("PIN reset to default: 000000", welcome text…) must wrap
+     instead of being clipped off-screen on narrow phones. */
+  max-width: min(90vw, 420px);
+  white-space: normal;
+  text-align: center;
+  line-height: 1.4;
 }
 
 @keyframes toastSlideUp {

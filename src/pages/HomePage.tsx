@@ -1,6 +1,7 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { Card } from '../components/ui/Card';
 import { useApp } from '../hooks/useAppState';
+import { showSystemNotification } from '../utils/device';
 import {
   findShortages,
   producedToday,

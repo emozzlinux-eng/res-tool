@@ -10,6 +10,7 @@ import {
 } from '../../utils/lockout';
 import { vibrate } from '../../utils/device';
 import { shuffle } from '../../utils/helpers';
+import { isBiometricAvailable, hasBiometricEnrolled, verifyBiometric } from '../../utils/biometric';
 
 type PinMode = 'verify' | 'change-old' | 'change-new' | 'change-confirm';
 
@@ -23,6 +24,10 @@ interface PinScreenProps {
   panicWipeEnabled?: boolean;
   /** Called after a confirmed panic wipe so the app can reset to first-run state. */
   onPanicWipe?: () => void;
+  /** Receives the key-press handler so App's window-level listener can drive the keypad. */
+  onKeyHandler?: (handler: (key: string) => void) => void;
+  /** Invoked after a successful WebAuthn assertion — App unlocks without a PIN. */
+  onBiometricUnlock?: () => void;
 }
 
 const titles: Record<PinMode, string> = {
@@ -50,6 +55,8 @@ export const PinScreen: React.FC<PinScreenProps> = ({
   scrambleKeypad = false,
   panicWipeEnabled = false,
   onPanicWipe,
+  onKeyHandler,
+  onBiometricUnlock,
 }) => {
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
@@ -57,6 +64,38 @@ export const PinScreen: React.FC<PinScreenProps> = ({
   const [lockRemaining, setLockRemaining] = useState(getLockRemainingSec);
   const [verifying, setVerifying] = useState(false);
   const [panicArmed, setPanicArmed] = useState(false);
+  // Biometric quick-unlock (WebAuthn) — only offered on the verify screen when
+  // the device supports a platform authenticator AND the user enrolled one.
+  const [bioAvailable, setBioAvailable] = useState(false);
+  const [bioBusy, setBioBusy] = useState(false);
+  useEffect(() => {
+    if (mode !== 'verify' || !onBiometricUnlock || !hasBiometricEnrolled()) return;
+    let alive = true;
+    isBiometricAvailable().then((ok) => {
+      if (alive) setBioAvailable(ok);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [mode, onBiometricUnlock]);
+
+  const handleBiometric = async () => {
+    if (!onBiometricUnlock || bioBusy) return;
+    setBioBusy(true);
+    try {
+      const ok = await verifyBiometric();
+      if (ok) {
+        setFailedAttempts(0);
+        saveLockUntil(0);
+        setAttempts(0);
+        onBiometricUnlock();
+      } else {
+        setError('Biometric check failed — use your PIN.');
+      }
+    } finally {
+      setBioBusy(false);
+    }
+  };
   // Guards against double-submitting the last digit before verification settles
   const busyRef = React.useRef(false);
 
@@ -66,12 +105,20 @@ export const PinScreen: React.FC<PinScreenProps> = ({
     [scrambleKeypad, mode]
   );
 
-  // Persistent countdown — survives page reloads (anti brute-force)
+  // Persistent countdown — survives page reloads (anti brute-force).
+  // Derived from the wall-clock `until` timestamp instead of decrementing a
+  // counter per tick: setTimeout chains drift when the tab is throttled
+  // (backgrounded PWA), so the displayed seconds could lag behind the real
+  // lockout. Interval only runs while locked, and stops itself at zero.
   useEffect(() => {
     if (lockRemaining <= 0) return;
-    const timer = setTimeout(() => setLockRemaining((s) => s - 1), 1000);
-    return () => clearTimeout(timer);
-  }, [lockRemaining]);
+    const timer = setInterval(() => {
+      const s = getLockRemainingSec();
+      setLockRemaining(s);
+      if (s <= 0) clearInterval(timer);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [lockRemaining > 0]);
 
   const applyLockout = (seconds: number) => {
     saveLockUntil(Date.now() + seconds * 1000);
@@ -155,6 +202,12 @@ export const PinScreen: React.FC<PinScreenProps> = ({
     if (/^[0-9]$/.test(e.key)) handleKey(e.key);
     else if (e.key === 'Backspace') handleKey('backspace');
   };
+
+  // Expose the keypad handler to App's window-level listener, which is more
+  // reliable on Android where soft-keyboard events can miss a focused div.
+  useEffect(() => {
+    onKeyHandler?.(handleKey);
+  });
 
   const isVerify = mode === 'verify' || mode === 'change-old';
   const disabled = lockRemaining > 0 || panicArmed;
@@ -243,6 +296,18 @@ export const PinScreen: React.FC<PinScreenProps> = ({
           </>
         )}
       </div>
+
+      {/* Biometric quick-unlock — appears only when the device offers a
+          platform authenticator and the user enrolled one in Profile. */}
+      {mode === 'verify' && bioAvailable && onBiometricUnlock && (
+        <button
+          className="btn btn--ghost btn--sm mt-4 self-center"
+          onClick={handleBiometric}
+          disabled={bioBusy || lockRemaining > 0}
+        >
+          {bioBusy ? 'Checking…' : '🔓 Unlock with Face / Touch ID'}
+        </button>
+      )}
 
       {/* Footer note */}
       <p className="login-footer">
