@@ -28,6 +28,11 @@ export interface Supplier {
   items: string[];
 }
 
+export interface StockChangeRecord {
+  itemName: string;
+  delta: number;
+}
+
 export interface DailyLogEntry {
   id: string;
   type: 'output' | 'waste' | 'restock';
@@ -37,6 +42,8 @@ export interface DailyLogEntry {
   time: string;
   timestamp: number;
   reason?: string;
+  /** Stock changes applied when this entry was logged, so it can be undone. */
+  stockChanges?: StockChangeRecord[];
 }
 
 export interface ActivityEntry {

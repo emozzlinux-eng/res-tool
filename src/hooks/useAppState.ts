@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, createContext, useContext } from 'react';
+import React, { useState, useEffect, useCallback, useRef, createContext, useContext } from 'react';
 import { AppState, Page } from '../types';
 import { loadState, saveState } from '../utils/storage';
 
@@ -10,6 +10,8 @@ interface AppContextType {
   isOnline: boolean;
   currentPage: Page;
   setCurrentPage: (page: Page) => void;
+  lock: () => void;
+  replayTutorial: () => void;
 }
 
 export const AppContext = createContext<AppContextType>({} as AppContextType);

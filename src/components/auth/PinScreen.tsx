@@ -55,9 +55,10 @@ export const PinScreen: React.FC<PinScreenProps> = ({ mode, onComplete, onError,
     setError('');
 
     if (newPin.length === 6) {
-      setTimeout(() => {
+      setTimeout(async () => {
         if (mode === 'verify' || mode === 'change-old') {
-          if (existingHash && verifyPin(newPin, existingHash)) {
+          const ok = existingHash ? await verifyPin(newPin, existingHash) : false;
+          if (ok) {
             onComplete(newPin);
           } else {
             const newAttempts = attempts + 1;
