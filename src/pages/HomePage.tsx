@@ -37,6 +37,45 @@ export const HomePage: React.FC = () => {
         <p className="text-sm text-[var(--text-sub)]">{getFormattedDate()}</p>
       </div>
 
+      {/* First-run setup checklist — shown until the workspace has data */}
+      {(state.rawItems.length === 0 || state.foods.length === 0) && (
+        <Card className="mb-4" style={{ borderColor: 'var(--primary)' }}>
+          <h3 className="card__title">Get started — set up your workspace</h3>
+          <div className="space-y-2 mb-3">
+            {[
+              { done: state.rawItems.length > 0, label: 'Add raw ingredients', hint: 'Flour, butter… with units, par levels & costs' },
+              { done: state.foods.length > 0, label: 'Add foods you produce', hint: 'The finished items you bake or make' },
+              { done: state.recipes.some((r) => r.ingredients.length > 0), label: 'Create recipes', hint: 'Link ingredients so stock deducts automatically' },
+              { done: state.suppliers.length > 0, label: 'Add suppliers', hint: 'For one-tap WhatsApp restock orders' },
+            ].map((step) => (
+              <div key={step.label} className="flex items-start gap-3">
+                <span
+                  className={`mt-0.5 w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-bold flex-shrink-0 ${
+                    step.done
+                      ? 'bg-[var(--success)] text-white'
+                      : 'border-2 border-[var(--border-strong)] text-transparent'
+                  }`}
+                >
+                  ✓
+                </span>
+                <div className="min-w-0">
+                  <div className={`text-sm font-medium ${step.done ? 'text-[var(--text-muted)] line-through' : 'text-[var(--text-main)]'}`}>
+                    {step.label}
+                  </div>
+                  {!step.done && <div className="text-xs text-[var(--text-muted)]">{step.hint}</div>}
+                </div>
+              </div>
+            ))}
+          </div>
+          <button
+            onClick={() => setCurrentPage('profile')}
+            className="btn btn--primary btn--sm btn--full"
+          >
+            Set up in Profile →
+          </button>
+        </Card>
+      )}
+
       {/* Stats Grid */}
       <div className="grid grid-cols-2 gap-3 mb-4">
         {stats.map((s) => (
@@ -53,9 +92,9 @@ export const HomePage: React.FC = () => {
       <div className="grid grid-cols-2 gap-3 mb-4">
         <button
           onClick={() => setCurrentPage('manage')}
-          className="flex items-center gap-2 p-3 rounded-[var(--radius)] bg-[var(--surface)] border border-[var(--border)] text-sm font-medium text-[var(--text-main)] active:scale-[0.98] transition-transform text-left"
+          className="flex items-center gap-2 p-3 rounded-[var(--radius)] bg-[var(--primary)] border border-[var(--primary)] text-sm font-semibold text-white active:scale-[0.98] transition-transform text-left shadow"
         >
-          📝 Log production
+          ➕ Quick log
         </button>
         <button
           onClick={() => setCurrentPage('shopping')}
@@ -73,7 +112,7 @@ export const HomePage: React.FC = () => {
       {/* Waste value banner */}
       {wasteValue > 0 && (
         <div className="mb-4 p-3 rounded-[var(--radius)] bg-[var(--danger-bg)] border border-[var(--danger)] text-xs text-[var(--danger)]">
-          💸 Wasted about <strong>{wasteValue.toFixed(2)}</strong> worth of stock today.
+          💸 Wasted about <strong>{state.currency}{wasteValue.toFixed(2)}</strong> worth of stock today.
         </div>
       )}
 

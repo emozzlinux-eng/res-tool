@@ -88,6 +88,60 @@ export const verifyPin = async (pin: string, storedHash: string): Promise<boolea
 export const isLegacyPinHash = (storedHash: string): boolean =>
   storedHash.startsWith('h_');
 
+/* ---------- Anti-theft / lockout helpers ---------- */
+
+const FAILED_KEY = 'inventoryPro_failed';
+const MAX_FAILED = 5;
+
+export const getFailedAttempts = (): number => {
+  try {
+    return Number(localStorage.getItem(FAILED_KEY)) || 0;
+  } catch {
+    return 0;
+  }
+};
+
+export const setFailedAttempts = (n: number): void => {
+  try {
+    if (n <= 0) localStorage.removeItem(FAILED_KEY);
+    else localStorage.setItem(FAILED_KEY, String(n));
+  } catch {
+    /* ignore */
+  }
+};
+
+/**
+ * Wipe every piece of app data this browser knows about (state + counters).
+ * Used as the panic response after too many wrong PIN attempts.
+ */
+export const wipeAllData = (): void => {
+  try {
+    localStorage.removeItem('inventoryPro_state');
+    localStorage.removeItem(FAILED_KEY);
+  } catch {
+    /* ignore */
+  }
+};
+
+/** Trigger a short haptic tick on supporting devices (safe no-op elsewhere). */
+export const vibrate = (ms: number | number[] = 12): void => {
+  try {
+    navigator.vibrate?.(ms);
+  } catch {
+    /* ignore */
+  }
+};
+
+/** Shuffle an array (used for optional keypad randomization). */
+export const shuffle = <T,>(arr: T[]): T[] => {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+};
+
 /**
  * Format timestamp to "time ago" string
  */

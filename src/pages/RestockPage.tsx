@@ -17,11 +17,12 @@ import { downloadFile, inventoryToCsv } from '../utils/export';
 import { inventoryValue } from '../utils/inventory';
 
 export const RestockPage: React.FC = () => {
-  const { state, setState, showToast } = useApp();
+  const { state, setState, showToast, setCurrentPage } = useApp();
   const [query, setQuery] = useState('');
   const [showOrders, setShowOrders] = useState(false);
   const [restockItem, setRestockItem] = useState<string | null>(null);
   const [restockQty, setRestockQty] = useState('');
+  const [sortMode, setSortMode] = useState<'name' | 'low'>('low');
 
   const shortages = useMemo(() => findShortages(state.rawItems), [state.rawItems]);
   const shortageNames = useMemo(
@@ -34,8 +35,17 @@ export const RestockPage: React.FC = () => {
     const items = q
       ? state.rawItems.filter((i) => i.name.toLowerCase().includes(q))
       : state.rawItems;
-    return [...items].sort((a, b) => a.name.localeCompare(b.name));
-  }, [state.rawItems, query]);
+    const sorted = [...items];
+    if (sortMode === 'low') {
+      // Problem items first: out of stock, then below par, then everyone else
+      const rank = (i: typeof sorted[number]) =>
+        i.currentStock <= 0 ? 0 : shortageNames.has(i.name) ? 1 : 2;
+      sorted.sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
+    } else {
+      sorted.sort((a, b) => a.name.localeCompare(b.name));
+    }
+    return sorted;
+  }, [state.rawItems, query, sortMode, shortageNames]);
 
   const outCount = state.rawItems.filter((i) => i.currentStock <= 0).length;
   const lowCount = shortages.filter((s) => !s.outOfStock).length;
@@ -108,7 +118,7 @@ export const RestockPage: React.FC = () => {
           <div className="text-xs text-[var(--text-muted)]">Out</div>
         </Card>
         <Card className="text-center py-4" padding="sm">
-          <div className="text-lg font-bold text-[var(--primary)]">{inventoryValue(state.rawItems)}</div>
+          <div className="text-lg font-bold text-[var(--primary)]">{state.currency}{inventoryValue(state.rawItems).toFixed(0)}</div>
           <div className="text-xs text-[var(--text-muted)]">Stock value</div>
         </Card>
       </div>
@@ -130,6 +140,14 @@ export const RestockPage: React.FC = () => {
           />
         </div>
         <button
+          onClick={() => setSortMode((m) => (m === 'low' ? 'name' : 'low'))}
+          aria-label={`Sort by ${sortMode === 'low' ? 'name' : 'need'}`}
+          title={sortMode === 'low' ? 'Sorted: needs first — tap for A–Z' : 'Sorted: A–Z — tap for needs first'}
+          className="h-[52px] px-3 shrink-0 rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface)] text-sm font-medium text-[var(--text-sub)] active:scale-95 transition-transform"
+        >
+          {sortMode === 'low' ? '⚠️ First' : 'A–Z'}
+        </button>
+        <button
           onClick={() => {
             downloadFile(`inventory-${new Date().toISOString().slice(0, 10)}.csv`, inventoryToCsv(state.rawItems));
             showToast('Inventory exported as CSV');
@@ -144,7 +162,16 @@ export const RestockPage: React.FC = () => {
 
       {/* Inventory list */}
       <Card>
-        {filtered.length === 0 ? (
+        {state.rawItems.length === 0 ? (
+          <div className="py-8 text-center">
+            <div className="text-3xl mb-3">📦</div>
+            <p className="text-sm font-medium text-[var(--text-main)] mb-1">No ingredients yet</p>
+            <p className="text-xs text-[var(--text-muted)] mb-4">Add your raw items to start tracking stock.</p>
+            <button onClick={() => setCurrentPage('profile')} className="btn btn--primary btn--sm">
+              + Add ingredients
+            </button>
+          </div>
+        ) : filtered.length === 0 ? (
           <p className="text-sm text-[var(--text-muted)] py-6 text-center">
             No items match “{query}”.
           </p>
@@ -164,7 +191,7 @@ export const RestockPage: React.FC = () => {
                       <div className="text-xs text-[var(--text-muted)]">
                         Par: {item.parLevel} {item.unit}
                         {(item.costPerUnit ?? 0) > 0 && (
-                          <span> · {(item.currentStock * (item.costPerUnit ?? 0)).toFixed(2)} value</span>
+                          <span> · {state.currency}{(item.currentStock * (item.costPerUnit ?? 0)).toFixed(2)} value</span>
                         )}
                         {isOut && (
                           <span className="ml-2 px-1.5 py-0.5 rounded bg-[var(--danger-bg)] text-[var(--danger)] font-semibold">

@@ -12,6 +12,7 @@ import {
 } from '../utils/inventory';
 import { generateId, getCurrentTime } from '../utils/helpers';
 import { downloadFile, logToCsv } from '../utils/export';
+import { exportMonthReport, monthsWithData } from '../utils/report';
 
 type LogType = DailyLogEntry['type'];
 
@@ -22,10 +23,21 @@ const typeMeta: Record<LogType, { label: string; icon: string; verb: string }> =
 };
 
 export const ManagePage: React.FC = () => {
-  const { state, setState, showToast } = useApp();
+  const { state, setState, showToast, setCurrentPage } = useApp();
   const [logType, setLogType] = useState<LogType>('output');
   const [selectedName, setSelectedName] = useState('');
   const [qty, setQty] = useState(1);
+
+  // Month-end Excel report picker
+  const monthOptions = useMemo(() => {
+    const opts = monthsWithData(state);
+    if (opts.length === 0) {
+      const now = new Date();
+      return [{ year: now.getFullYear(), month: now.getMonth() + 1, label: now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) }];
+    }
+    return opts;
+  }, [state]);
+  const [reportMonthKey, setReportMonthKey] = useState(`${monthOptions[0].year}-${monthOptions[0].month}`);
 
   // Candidate items depend on the log type
   const candidates = useMemo(() => {
@@ -64,6 +76,49 @@ export const ManagePage: React.FC = () => {
   );
 
   const todayLog = useMemo(() => todaysEntries(state.dailyLog), [state.dailyLog]);
+
+  // Favorites: one-tap quick-log chips above the form
+  const favorites = useMemo(
+    () => candidates.filter((c) => (state.favorites ?? []).includes(c.name)).slice(0, 8),
+    [candidates, state.favorites]
+  );
+  const isFavorite = selectedName ? (state.favorites ?? []).includes(selectedName) : false;
+  const toggleFavorite = () => {
+    if (!selectedName) return;
+    setState((prev) => {
+      const favs = prev.favorites ?? [];
+      return {
+        ...prev,
+        favorites: favs.includes(selectedName) ? favs.filter((n) => n !== selectedName) : [...favs, selectedName],
+      };
+    });
+    showToast(isFavorite ? 'Removed from quick log' : 'Added to quick log ⭐');
+  };
+  const quickLog = async (name: string) => {
+    const item = candidates.find((c) => c.name === name);
+    if (!item) return;
+    const changes = changesForEntry(state, logType, name, 1);
+    const entry: DailyLogEntry = {
+      id: generateId(),
+      type: logType,
+      icon: item.icon,
+      name,
+      qty: '1',
+      time: getCurrentTime(),
+      timestamp: Date.now(),
+      stockChanges: changes,
+    };
+    setState((prev) => ({
+      ...prev,
+      dailyLog: [entry, ...prev.dailyLog],
+      rawItems: applyStockChanges(prev.rawItems, changes),
+      activityLog: [
+        { action: `${typeMeta[logType].icon} ${logType} (quick): 1 ${name}`, time: Date.now() },
+        ...prev.activityLog.slice(0, 49),
+      ],
+    }));
+    showToast(`+1 ${name}`);
+  };
 
   const handleSave = () => {
     if (!selectedItem) {
@@ -136,10 +191,42 @@ export const ManagePage: React.FC = () => {
         ))}
       </div>
 
+      {/* Quick-log favorites */}
+      {favorites.length > 0 && (
+        <div className="mb-4">
+          <p className="settings-group__title mb-2">Quick log · {typeMeta[logType].label}</p>
+          <div className="flex gap-2 overflow-x-auto pb-1 ql-row">
+            {favorites.map((f) => (
+              <button
+                key={`fav-${f.name}`}
+                onClick={() => quickLog(f.name)}
+                className="chip flex-shrink-0"
+                aria-label={`Quick log 1 ${f.name}`}
+              >
+                {f.icon} {f.name} <span className="chip__plus">+1</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Input form */}
       <Card className="mb-4">
         <h3 className="card__title">{typeMeta[logType].label}</h3>
 
+        {candidates.length === 0 ? (
+          <div className="py-6 text-center">
+            <div className="text-3xl mb-3">🗂️</div>
+            <p className="text-sm font-medium text-[var(--text-main)] mb-1">Nothing to log yet</p>
+            <p className="text-xs text-[var(--text-muted)] mb-4">
+              Add your foods and ingredients first — then you can log production, waste and restocks here.
+            </p>
+            <button onClick={() => setCurrentPage('profile')} className="btn btn--primary btn--sm">
+              + Set up items in Profile
+            </button>
+          </div>
+        ) : (
+          <>
         {/* Item selector */}
         <select
           value={selectedName}
@@ -154,6 +241,20 @@ export const ManagePage: React.FC = () => {
             </option>
           ))}
         </select>
+
+        {selectedItem && (
+          <button
+            onClick={toggleFavorite}
+            className={`text-xs font-medium px-2 py-1 rounded-full border mb-3 transition-colors ${
+              isFavorite
+                ? 'bg-[var(--warning-bg)] text-[var(--warning)] border-[var(--warning)]'
+                : 'bg-[var(--surface-2)] text-[var(--text-sub)] border-[var(--border)]'
+            }`}
+            aria-pressed={isFavorite}
+          >
+            {isFavorite ? '★ In quick log' : '☆ Add to quick log'}
+          </button>
+        )}
 
         {/* Logic guide */}
         <div className="p-3 rounded-[var(--radius-sm)] bg-[var(--surface-2)] border border-[var(--border)] text-xs text-[var(--text-sub)] mb-3">
@@ -228,6 +329,8 @@ export const ManagePage: React.FC = () => {
         <Button fullWidth onClick={handleSave} disabled={!selectedItem || qty <= 0}>
           Save {typeMeta[logType].label.toLowerCase()} entry
         </Button>
+          </>
+        )}
       </Card>
 
       {/* Today's log */}
@@ -285,6 +388,49 @@ export const ManagePage: React.FC = () => {
             ))}
           </div>
         )}
+      </Card>
+
+      {/* Month-end report */}
+      <Card>
+        <h3 className="card__title">📊 Month-End Report (Excel)</h3>
+        <p className="text-xs text-[var(--text-muted)] mb-3">
+          Downloads an .xlsx workbook with summary, production, waste, restocks and an inventory snapshot.
+        </p>
+        <div className="flex items-center gap-2">
+          <select
+            value={reportMonthKey}
+            onChange={(e) => setReportMonthKey(e.target.value)}
+            aria-label="Choose month to export"
+            className="flex-1 min-w-0 rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-sm text-[var(--text-main)]"
+          >
+            {monthOptions.map((m) => (
+              <option key={`${m.year}-${m.month}`} value={`${m.year}-${m.month}`}>
+                {m.label}
+              </option>
+            ))}
+          </select>
+          <Button
+            onClick={() => {
+              const [y, mo] = reportMonthKey.split('-').map(Number);
+              const hasEntries = state.dailyLog.some((e) => {
+                const d = new Date(e.timestamp);
+                return d.getFullYear() === y && d.getMonth() + 1 === mo;
+              });
+              if (!hasEntries) {
+                showToast('No entries logged in that month');
+                return;
+              }
+              try {
+                exportMonthReport(state, y, mo);
+                showToast('Excel report downloaded');
+              } catch {
+                showToast('Could not generate the report');
+              }
+            }}
+          >
+            Export Excel
+          </Button>
+        </div>
       </Card>
     </div>
   );

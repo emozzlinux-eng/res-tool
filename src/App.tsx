@@ -11,7 +11,7 @@ import { ManagePage } from './pages/ManagePage';
 import { RestockPage } from './pages/RestockPage';
 import { ShoppingPage } from './pages/ShoppingPage';
 import { ProfilePage } from './pages/ProfilePage';
-import { Page } from './types';
+import { Page, DEFAULT_STATE } from './types';
 
 const pageTitles: Record<Page, string> = {
   home: 'Dashboard',
@@ -69,6 +69,19 @@ const App: React.FC = () => {
     };
   }, []);
 
+  // Privacy: lock immediately when the tab/window loses focus (optional)
+  useEffect(() => {
+    if (!state.privacyBlur) return;
+    const onHide = () => {
+      document
+        .querySelector('.page-stage--blurrable')
+        ?.classList.toggle('privacy-hidden', document.hidden);
+      if (document.hidden && state.pin && !showOnboarding) setIsLocked(true);
+    };
+    document.addEventListener('visibilitychange', onHide);
+    return () => document.removeEventListener('visibilitychange', onHide);
+  }, [state.privacyBlur, state.pin, showOnboarding]);
+
   // Check if first launch
   useEffect(() => {
     if (!state.onboardingSeen) {
@@ -120,11 +133,19 @@ const App: React.FC = () => {
 
   const handlePinVerify = async (pin: string) => {
     setIsLocked(false);
+    lastActivity.current = Date.now();
     // Transparently upgrade legacy weak PIN hashes on successful unlock
     if (state.pin.startsWith('h_')) {
       updateState({ pin: await hashPin(pin) });
       showToast('PIN security upgraded to SHA-256');
     }
+  };
+
+  // Panic wipe completed on the PIN screen — return to first-run state
+  const handlePanicWipe = () => {
+    setState({ ...DEFAULT_STATE });
+    setIsLocked(true);
+    setShowOnboarding(false);
   };
 
   // Change-PIN flow (opened from Profile)
@@ -228,6 +249,9 @@ const App: React.FC = () => {
             mode="verify"
             existingHash={state.pin}
             onComplete={handlePinVerify}
+            scrambleKeypad={state.scrambleKeypad}
+            panicWipeEnabled={state.panicWipeEnabled}
+            onPanicWipe={handlePanicWipe}
           />
           <Toast message={toast.msg} visible={toast.visible} />
         </div>
@@ -255,12 +279,14 @@ const App: React.FC = () => {
           }
         />
 
-        {/* Page Content */}
-        {currentPage === 'home' && <HomePage />}
-        {currentPage === 'manage' && <ManagePage />}
-        {currentPage === 'restock' && <RestockPage />}
-        {currentPage === 'shopping' && <ShoppingPage />}
-        {currentPage === 'profile' && <ProfilePage onOpenChangePin={() => setChangingPin(true)} />}
+        {/* Page Content (optionally blurred when the window loses focus — shoulder-surfing protection) */}
+        <div className={`page-stage ${state.privacyBlur ? 'page-stage--blurrable' : ''}`}>
+          {currentPage === 'home' && <HomePage />}
+          {currentPage === 'manage' && <ManagePage />}
+          {currentPage === 'restock' && <RestockPage />}
+          {currentPage === 'shopping' && <ShoppingPage />}
+          {currentPage === 'profile' && <ProfilePage onOpenChangePin={() => setChangingPin(true)} />}
+        </div>
 
         {/* Bottom Navigation */}
         <BottomNav

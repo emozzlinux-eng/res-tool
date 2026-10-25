@@ -7,6 +7,7 @@ interface CardProps {
   className?: string;
   padding?: 'none' | 'sm' | 'md' | 'lg';
   onClick?: () => void;
+  style?: React.CSSProperties;
 }
 
 const paddingMap = {
@@ -23,6 +24,7 @@ export const Card: React.FC<CardProps> = ({
   className = '',
   padding = 'md',
   onClick,
+  style,
 }) => {
   const classes = [
     'card',
@@ -33,7 +35,7 @@ export const Card: React.FC<CardProps> = ({
   ].filter(Boolean).join(' ');
 
   return (
-    <div className={classes} onClick={onClick} role={onClick ? 'button' : undefined}>
+    <div className={classes} onClick={onClick} role={onClick ? 'button' : undefined} style={style}>
       {title && <h3 className="card__title">{title}</h3>}
       {children}
     </div>

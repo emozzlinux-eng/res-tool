@@ -374,10 +374,10 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ onOpenChangePin }) => 
           if (!rc) return null;
           return (
             <div className="p-3 rounded-[var(--radius-sm)] bg-[var(--surface-2)] border border-[var(--border)] text-xs text-[var(--text-sub)]">
-              <strong className="text-[var(--text-main)]">Estimated ingredient cost: {rc.total.toFixed(2)} per unit</strong>
+              <strong className="text-[var(--text-main)]">Estimated ingredient cost: {state.currency}{rc.total.toFixed(2)} per unit</strong>
               <div className="mt-1 space-y-0.5">
                 {rc.lines.filter((l) => l.cost > 0).map((l) => (
-                  <div key={l.itemName}>• {l.itemName}: {l.qty} × {state.rawItems.find((r) => r.name === l.itemName)?.costPerUnit?.toFixed(2)} = {l.cost.toFixed(2)}</div>
+                  <div key={l.itemName}>• {l.itemName}: {l.qty} × {state.currency}{(state.rawItems.find((r) => r.name === l.itemName)?.costPerUnit ?? 0).toFixed(2)} = {state.currency}{l.cost.toFixed(2)}</div>
                 ))}
               </div>
               <div className="mt-1 text-[var(--text-muted)]">Set a cost per unit on raw items (edit an item) to see real numbers.</div>
@@ -478,6 +478,30 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ onOpenChangePin }) => 
             </div>
             <ChevronRight size={16} className="settings-item__chevron" />
           </button>
+          <div className="settings-item">
+            <div className="settings-item__icon bg-[var(--surface-2)]">🔀</div>
+            <div className="settings-item__content">
+              <div className="settings-item__label">Scramble Keypad</div>
+              <div className="settings-item__desc">Randomize PIN key positions at login</div>
+            </div>
+            <ToggleSwitch checked={state.scrambleKeypad} onChange={(c) => updateState({ scrambleKeypad: c })} label="" />
+          </div>
+          <div className="settings-item">
+            <div className="settings-item__icon bg-[var(--surface-2)]">🫥</div>
+            <div className="settings-item__content">
+              <div className="settings-item__label">Privacy Lock on Hide</div>
+              <div className="settings-item__desc">Lock the app when you switch tabs or apps</div>
+            </div>
+            <ToggleSwitch checked={state.privacyBlur} onChange={(c) => updateState({ privacyBlur: c })} label="" />
+          </div>
+          <div className="settings-item">
+            <div className="settings-item__icon bg-[var(--danger-bg)]">💣</div>
+            <div className="settings-item__content">
+              <div className="settings-item__label">Panic Erase Option</div>
+              <div className="settings-item__desc">Offer “erase all data” after 5 wrong PINs (requires your correct PIN to fire)</div>
+            </div>
+            <ToggleSwitch checked={state.panicWipeEnabled} onChange={(c) => updateState({ panicWipeEnabled: c })} label="" />
+          </div>
         </div>
       </div>
 
@@ -515,6 +539,23 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ onOpenChangePin }) => 
               <div className="settings-item__label">Dark Mode</div>
             </div>
             <ToggleSwitch checked={state.darkMode} onChange={(checked) => updateState({ darkMode: checked })} label="" />
+          </div>
+          <div className="settings-item">
+            <div className="settings-item__icon bg-[var(--surface-2)]">💱</div>
+            <div className="settings-item__content">
+              <div className="settings-item__label">Currency</div>
+              <div className="settings-item__desc">Used for costs, stock value &amp; waste</div>
+            </div>
+            <select
+              value={state.currency}
+              onChange={(e) => updateState({ currency: e.target.value })}
+              aria-label="Choose currency symbol"
+              className="rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-2 py-1.5 text-sm text-[var(--text-main)]"
+            >
+              {['$', '₦', '₹', '£', '€', 'R', 'KSh', 'Cedi', 'GHC', 'AED', 'SAR'].map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
           </div>
           <button className="settings-item" onClick={handleBackup}>
             <div className="settings-item__icon bg-[var(--surface-2)]">💾</div>
@@ -569,9 +610,21 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ onOpenChangePin }) => 
         </div>
       </div>
 
+      {/* Privacy */}
+      <Card className="mb-6">
+        <h3 className="card__title">🛡️ Privacy &amp; security</h3>
+        <ul className="space-y-1.5 text-xs text-[var(--text-sub)] list-none">
+          <li>✅ 100% offline — no servers, no accounts, no tracking, no analytics.</li>
+          <li>✅ All data lives only in this browser’s local storage.</li>
+          <li>✅ Your PIN is never stored — only a salted SHA-256 (PBKDF2, 100k rounds) hash.</li>
+          <li>✅ Wrong-PIN lockouts persist even if the page reloads.</li>
+          <li>⚠️ Anyone with this device and your PIN can see the data — keep backups private.</li>
+        </ul>
+      </Card>
+
       {/* About */}
       <div className="text-center py-4">
-        <p className="text-xs text-[var(--text-muted)]">Inventory Pro v4.1.0</p>
+        <p className="text-xs text-[var(--text-muted)]">Inventory Pro v4.2.0 · offline &amp; private by design</p>
       </div>
 
       {/* Name dialog */}

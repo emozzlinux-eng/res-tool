@@ -1,6 +1,13 @@
-import React, { useState, useEffect } from 'react';
-import { Lock } from 'lucide-react';
-import { verifyPin } from '../../utils/helpers';
+import React, { useState, useEffect, useMemo } from 'react';
+import { ShieldCheck, Delete } from 'lucide-react';
+import {
+  verifyPin,
+  getFailedAttempts,
+  setFailedAttempts,
+  wipeAllData,
+  vibrate,
+  shuffle,
+} from '../../utils/helpers';
 
 type PinMode = 'setup' | 'confirm' | 'verify' | 'change-old' | 'change-new' | 'change-confirm';
 
@@ -9,43 +16,90 @@ interface PinScreenProps {
   onComplete: (pin: string) => void;
   onError?: () => void;
   existingHash?: string;
+  /** Security options — passed by App so users can harden sign-in. */
+  scrambleKeypad?: boolean;
+  panicWipeEnabled?: boolean;
+  /** Called after a confirmed panic wipe so the app can reset to first-run state. */
+  onPanicWipe?: () => void;
 }
 
 const titles: Record<PinMode, string> = {
   'setup': 'Create Your PIN',
   'confirm': 'Confirm Your PIN',
-  'verify': 'Enter Your PIN',
+  'verify': 'Welcome back',
   'change-old': 'Enter Current PIN',
   'change-new': 'Create New PIN',
   'change-confirm': 'Confirm New PIN',
 };
 
 const subtitles: Record<PinMode, string> = {
-  'setup': 'Choose a 6-digit PIN to secure your app',
-  'confirm': 'Enter the same PIN again to confirm',
-  'verify': 'Unlock Inventory Pro',
-  'change-old': 'Verify your identity',
+  'setup': 'Choose a 6-digit PIN to secure your workspace',
+  'confirm': 'Re-enter the same PIN to confirm',
+  'verify': 'Enter your PIN to sign in',
+  'change-old': 'Verify your identity first',
   'change-new': 'Choose a new 6-digit PIN',
-  'change-confirm': 'Enter the new PIN again',
+  'change-confirm': 'Re-enter the new PIN',
 };
 
-export const PinScreen: React.FC<PinScreenProps> = ({ mode, onComplete, onError, existingHash }) => {
+/** Lockout schedule (seconds) after each consecutive block of failed attempts. */
+const LOCK_STEPS = [15, 30, 60, 120, 300];
+
+const loadLockUntil = (): number => {
+  try {
+    return Number(localStorage.getItem('inventoryPro_lockUntil')) || 0;
+  } catch {
+    return 0;
+  }
+};
+const saveLockUntil = (t: number) => {
+  try {
+    if (t > 0) localStorage.setItem('inventoryPro_lockUntil', String(t));
+    else localStorage.removeItem('inventoryPro_lockUntil');
+  } catch {
+    /* ignore */
+  }
+};
+
+export const PinScreen: React.FC<PinScreenProps> = ({
+  mode,
+  onComplete,
+  onError,
+  existingHash,
+  scrambleKeypad = false,
+  panicWipeEnabled = false,
+  onPanicWipe,
+}) => {
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
-  const [attempts, setAttempts] = useState(0);
-  const [lockout, setLockout] = useState(0);
+  const [attempts, setAttempts] = useState(getFailedAttempts);
+  const [lockRemaining, setLockRemaining] = useState(() =>
+    Math.max(0, Math.ceil((loadLockUntil() - Date.now()) / 1000))
+  );
+  const [verifying, setVerifying] = useState(false);
+  const [panicArmed, setPanicArmed] = useState(false);
 
+  // Scrambled keypad layout (changes every time the screen opens)
+  const keyOrder = useMemo(
+    () => (scrambleKeypad && mode === 'verify' ? shuffle(['1','2','3','4','5','6','7','8','9','0']) : null),
+    [scrambleKeypad, mode]
+  );
+
+  // Persistent countdown — survives page reloads (anti brute-force)
   useEffect(() => {
-    if (lockout > 0) {
-      const timer = setTimeout(() => setLockout(lockout - 1), 1000);
-      return () => clearTimeout(timer);
-    }
-  }, [lockout]);
+    if (lockRemaining <= 0) return;
+    const timer = setTimeout(() => setLockRemaining((s) => s - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [lockRemaining]);
+
+  const applyLockout = (seconds: number) => {
+    saveLockUntil(Date.now() + seconds * 1000);
+    setLockRemaining(seconds);
+  };
 
   const handleKey = (key: string) => {
-    if (lockout > 0) return;
+    if (lockRemaining > 0 || verifying || panicArmed) return;
     if (key === 'backspace') {
-      setPin(p => p.slice(0, -1));
+      setPin((p) => p.slice(0, -1));
       setError('');
       return;
     }
@@ -53,58 +107,163 @@ export const PinScreen: React.FC<PinScreenProps> = ({ mode, onComplete, onError,
     const newPin = pin + key;
     setPin(newPin);
     setError('');
+    vibrate(8);
 
     if (newPin.length === 6) {
+      setVerifying(true);
       setTimeout(async () => {
         if (mode === 'verify' || mode === 'change-old') {
           const ok = existingHash ? await verifyPin(newPin, existingHash) : false;
+          setVerifying(false);
           if (ok) {
+            setFailedAttempts(0);
+            saveLockUntil(0);
+            setAttempts(0);
             onComplete(newPin);
           } else {
+            vibrate([40, 60, 40]);
             const newAttempts = attempts + 1;
             setAttempts(newAttempts);
-            if (newAttempts >= 5) {
-              setLockout(30);
-              setAttempts(0);
-              setError('Too many attempts. Locked for 30s.');
-            } else {
-              setError(`Wrong PIN. ${5 - newAttempts} attempts left.`);
-            }
+            setFailedAttempts(newAttempts);
             setPin('');
+            setError('');
+            if (panicWipeEnabled && newAttempts >= 5) {
+              setPanicArmed(true);
+            } else if (newAttempts >= 5) {
+              applyLockout(LOCK_STEPS[Math.min(newAttempts - 5, LOCK_STEPS.length - 1)]);
+              setFailedAttempts(0);
+              setAttempts(0);
+            } else {
+              setError(`Incorrect PIN. ${5 - newAttempts} attempt${5 - newAttempts === 1 ? '' : 's'} left.`);
+            }
             onError?.();
           }
         } else {
+          setVerifying(false);
           onComplete(newPin);
         }
       }, 200);
     }
   };
 
+  const confirmPanicWipe = async () => {
+    // Require the CURRENT PIN to erase — an attacker who doesn't know it can't trigger the wipe.
+    const input = window.prompt(
+      'Enter your correct PIN to erase all data now (or press Cancel to go back and wait for the lockout):'
+    );
+    if (input === null) {
+      setPanicArmed(false);
+      return;
+    }
+    if (/^\d{6}$/.test(input) && existingHash && (await verifyPin(input, existingHash))) {
+      wipeAllData();
+      onPanicWipe?.();
+    } else {
+      setError('Wrong PIN — data was NOT erased.');
+      setPanicArmed(false);
+    }
+  };
+
+  // Physical keyboard support (desktop / external keyboards)
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (/^[0-9]$/.test(e.key)) handleKey(e.key);
+    else if (e.key === 'Backspace') handleKey('backspace');
+  };
+
+  const isVerify = mode === 'verify' || mode === 'change-old';
+  const disabled = lockRemaining > 0 || panicArmed;
+
   return (
-    <div className="pin-screen">
-      <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-6 bg-[var(--primary)]">
-        <Lock size={28} color="white" />
+    <div className="login-screen" tabIndex={0} onKeyDown={handleKeyDown} autoFocus>
+      {/* Brand header */}
+      <div className="login-brand">
+        <div className="login-brand__logo">
+          <ShieldCheck size={26} color="#fff" strokeWidth={2.2} />
+        </div>
+        <div>
+          <div className="login-brand__name">Inventory Pro</div>
+          <div className="login-brand__tag">Production &amp; stock control</div>
+        </div>
       </div>
-      <h1 className="text-xl font-semibold mb-2 text-[var(--text-main)]">{titles[mode]}</h1>
-      <p className="text-sm mb-8 text-center text-[var(--text-sub)]">{subtitles[mode]}</p>
-      
-      <div className="pin-dots mb-4">
-        {[0, 1, 2, 3, 4, 5].map(i => (
-          <div key={i} className={`pin-dot ${i < pin.length ? 'pin-dot--filled' : ''}`} />
+
+      {/* Titles */}
+      <div className="login-heading">
+        <h1 className="login-heading__title">{titles[mode]}</h1>
+        <p className="login-heading__sub">{subtitles[mode]}</p>
+      </div>
+
+      {/* PIN dots */}
+      <div
+        className={`pin-dots mb-4 ${verifying ? 'pin-dots--busy' : ''}`}
+        aria-live="polite"
+        aria-label={`${pin.length} of 6 digits entered`}
+      >
+        {[0, 1, 2, 3, 4, 5].map((i) => (
+          <div
+            key={i}
+            className={`pin-dot ${i < pin.length ? 'pin-dot--filled' : ''} ${error ? 'pin-dot--error' : ''}`}
+          />
         ))}
       </div>
-      
-      {error && <p className="text-xs mb-4 text-[var(--danger)]">{error}</p>}
-      {lockout > 0 && <p className="text-xs mb-4 text-[var(--warning)]">Locked: {lockout}s</p>}
-      
+
+      {error && <p className="login-msg login-msg--error" role="alert">{error}</p>}
+      {lockRemaining > 0 && (
+        <p className="login-msg login-msg--warn" role="status">
+          Locked — try again in {lockRemaining}s
+        </p>
+      )}
+      {panicArmed && (
+        <div className="login-panic" role="alert">
+          <p className="text-xs font-medium mb-2">
+            5 wrong attempts reached. You can erase all data on this device now — a thief gets nothing.
+          </p>
+          <button className="btn btn--danger btn--sm" onClick={confirmPanicWipe}>
+            Erase all data
+          </button>
+        </div>
+      )}
+      {!error && lockRemaining === 0 && !panicArmed && (
+        <p className="login-msg login-msg--ghost">&nbsp;</p>
+      )}
+
+      {/* Keypad */}
       <div className="pin-pad">
-        {['1','2','3','4','5','6','7','8','9'].map(k => (
-          <button key={k} className="pin-key" onClick={() => handleKey(k)} aria-label={`Key ${k}`}>{k}</button>
-        ))}
-        <button className="pin-key" aria-label="Biometric" style={{ fontSize: '20px' }}>🔓</button>
-        <button className="pin-key" onClick={() => handleKey('0')} aria-label="Key 0">0</button>
-        <button className="pin-key" onClick={() => handleKey('backspace')} aria-label="Backspace" style={{ fontSize: '20px' }}>⌫</button>
+        {keyOrder ? (
+          <>
+            {keyOrder.map((k) => (
+              <button key={k} className="pin-key" onClick={() => handleKey(k)} aria-label={`Key ${k}`} disabled={disabled}>
+                {k}
+              </button>
+            ))}
+            <span className="pin-key pin-key--spacer" aria-hidden="true" />
+            <button className="pin-key pin-key--action" onClick={() => handleKey('backspace')} aria-label="Delete last digit" disabled={disabled}>
+              <Delete size={22} />
+            </button>
+          </>
+        ) : (
+          <>
+            {['1','2','3','4','5','6','7','8','9'].map((k) => (
+              <button key={k} className="pin-key" onClick={() => handleKey(k)} aria-label={`Key ${k}`} disabled={disabled}>
+                {k}
+              </button>
+            ))}
+            <span className="pin-key pin-key--spacer" aria-hidden="true" />
+            <button className="pin-key" onClick={() => handleKey('0')} aria-label="Key 0" disabled={disabled}>
+              0
+            </button>
+            <button className="pin-key pin-key--action" onClick={() => handleKey('backspace')} aria-label="Delete last digit" disabled={disabled}>
+              <Delete size={22} />
+            </button>
+          </>
+        )}
       </div>
+
+      {/* Footer note */}
+      <p className="login-footer">
+        {isVerify
+          ? 'Your data stays on this device — nothing leaves the browser.'
+          : 'This PIN protects the data stored on this device.'}
+      </p>
     </div>
   );
 };
