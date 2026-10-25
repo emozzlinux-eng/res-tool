@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Lock } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Lock, X } from 'lucide-react';
 import { verifyPin } from '../../utils/helpers';
 
 type PinMode = 'setup' | 'confirm' | 'verify' | 'change-old' | 'change-new' | 'change-confirm';
@@ -8,6 +8,7 @@ interface PinScreenProps {
   mode: PinMode;
   onComplete: (pin: string) => void;
   onError?: () => void;
+  onCancel?: () => void;
   existingHash?: string;
 }
 
@@ -29,7 +30,7 @@ const subtitles: Record<PinMode, string> = {
   'change-confirm': 'Enter the new PIN again',
 };
 
-export const PinScreen: React.FC<PinScreenProps> = ({ mode, onComplete, onError, existingHash }) => {
+export const PinScreen: React.FC<PinScreenProps> = ({ mode, onComplete, onError, onCancel, existingHash }) => {
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
   const [attempts, setAttempts] = useState(0);
@@ -73,14 +74,33 @@ export const PinScreen: React.FC<PinScreenProps> = ({ mode, onComplete, onError,
             onError?.();
           }
         } else {
+          setPin('');
           onComplete(newPin);
         }
       }, 200);
     }
   };
 
+  // Physical keyboard support
+  const handleKeyRef = useRef(handleKey);
+  handleKeyRef.current = handleKey;
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (/^[0-9]$/.test(e.key)) handleKeyRef.current(e.key);
+      else if (e.key === 'Backspace') handleKeyRef.current('backspace');
+      else if (e.key === 'Escape') onCancel?.();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onCancel]);
+
   return (
-    <div className="pin-screen">
+    <div className="pin-screen relative">
+      {onCancel && (
+        <button className="modal-close" onClick={onCancel} aria-label="Cancel">
+          <X size={16} />
+        </button>
+      )}
       <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-6 bg-[var(--primary)]">
         <Lock size={28} color="white" />
       </div>
@@ -100,7 +120,7 @@ export const PinScreen: React.FC<PinScreenProps> = ({ mode, onComplete, onError,
         {['1','2','3','4','5','6','7','8','9'].map(k => (
           <button key={k} className="pin-key" onClick={() => handleKey(k)} aria-label={`Key ${k}`}>{k}</button>
         ))}
-        <button className="pin-key" aria-label="Biometric" style={{ fontSize: '20px' }}>🔓</button>
+        <div aria-hidden="true" />
         <button className="pin-key" onClick={() => handleKey('0')} aria-label="Key 0">0</button>
         <button className="pin-key" onClick={() => handleKey('backspace')} aria-label="Backspace" style={{ fontSize: '20px' }}>⌫</button>
       </div>

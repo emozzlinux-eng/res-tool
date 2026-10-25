@@ -28,29 +28,29 @@ export interface Supplier {
   items: string[];
 }
 
+export type LogType = 'output' | 'waste' | 'restock';
+
+export interface StockChange {
+  itemName: string;
+  delta: number;
+}
+
 export interface DailyLogEntry {
   id: string;
-  type: 'output' | 'waste' | 'restock';
+  type: LogType;
   icon: string;
   name: string;
   qty: string;
   time: string;
   timestamp: number;
   reason?: string;
+  /** Raw stock adjustments applied by this entry, used to undo it */
+  changes?: StockChange[];
 }
 
 export interface ActivityEntry {
   action: string;
   time: number;
-}
-
-export interface SyncQueueEntry {
-  id: string;
-  op: 'SET' | 'REMOVE';
-  key: string;
-  data: unknown;
-  timestamp: number;
-  retryCount: number;
 }
 
 export interface AppState {
@@ -60,13 +60,26 @@ export interface AppState {
   suppliers: Supplier[];
   dailyLog: DailyLogEntry[];
   activityLog: ActivityEntry[];
-  syncQueue: SyncQueueEntry[];
   pin: string;
   onboardingSeen: boolean;
   darkMode: boolean;
+  /** 0 = never auto-lock */
   autoLockMinutes: number;
   userName: string;
+  /** Random key identifying this workspace in cloud sync */
+  syncKey: string;
+  /** Last local change to synced data (ms) */
+  dataUpdatedAt: number;
+  /** Server timestamp of the last successful sync (ms) */
+  lastSyncedAt: number;
 }
+
+/** Business data shared between devices via cloud sync */
+export const SYNCED_KEYS = ['foods', 'rawItems', 'recipes', 'suppliers', 'dailyLog', 'activityLog', 'userName'] as const;
+export type SyncedKey = typeof SYNCED_KEYS[number];
+export type SyncedData = Pick<AppState, SyncedKey>;
+
+export type SyncStatus = 'synced' | 'syncing' | 'pending' | 'offline' | 'error';
 
 export type Page = 'home' | 'manage' | 'restock' | 'profile';
 
@@ -96,10 +109,12 @@ export const DEFAULT_STATE: AppState = {
   ],
   dailyLog: [],
   activityLog: [],
-  syncQueue: [],
   pin: '',
   onboardingSeen: false,
   darkMode: false,
   autoLockMinutes: 5,
   userName: 'Manager',
+  syncKey: '',
+  dataUpdatedAt: 0,
+  lastSyncedAt: 0,
 };
